@@ -1,0 +1,92 @@
+# 墙外模型下载中继 —— GitHub Actions 在境外下载 HuggingFace 模型，分块传回
+name: HF Model Download Relay
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_id:
+        description: 'HF仓库名'
+        required: true
+        type: string
+        default: 'Abiray/Sulphur-2-base-GGUF'
+      filename:
+        description: '文件名(支持通配符)'
+        required: true
+        type: string
+        default: 'sulphur_dev-Q4_K_M.gguf'
+      chunk_gb:
+        description: '分块大小(GB)'
+        required: false
+        type: string
+        default: '1.5'
+
+jobs:
+  download-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: 安装工具
+        run: pip install huggingface_hub
+
+      - name: 从 HuggingFace 下载模型
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python3 << 'PYEOF'
+          import os
+          from huggingface_hub import hf_hub_download, list_repo_files
+
+          repo = os.environ['REPO_ID']
+          pattern = os.environ['FILENAME']
+
+          # 列出匹配文件
+          files = list_repo_files(repo)
+          matches = [f for f in files if pattern.replace('*','') in f]
+          if not matches:
+              print(f'未找到匹配 "{pattern}" 的文件')
+              print(f'仓库文件: {files[:20]}')
+              exit(1)
+
+          target = matches[0]
+          print(f'下载: {repo}/{target}')
+
+          path = hf_hub_download(
+              repo_id=repo,
+              filename=target,
+              resume_download=True,
+              local_dir='./model'
+          )
+          print(f'下载完成: {path}')
+
+          # 记录文件名
+          with open('model_info.txt', 'w') as f:
+              f.write(f'{target}\n{path}\n')
+          PYEOF
+        env:
+          REPO_ID: ${{ inputs.repo_id }}
+          FILENAME: ${{ inputs.filename }}
+
+      - name: 分块
+        run: |
+          mkdir -p chunks
+          cd model
+          TARGET=$(head -1 ../model_info.txt)
+          CHUNK_SIZE=${{ inputs.chunk_gb }}G
+          split -b $CHUNK_SIZE -d "$TARGET" ../chunks/${TARGET}.part_
+          cd ../chunks
+          ls -lh
+          echo "总块数: $(ls -1 | wc -l)"
+
+      - name: 创建 Release 并上传分块
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: model-${{ github.run_id }}
+          name: "${{ inputs.repo_id }} — ${{ inputs.filename }}"
+          body: |
+            ## 模型下载中继
+            - **仓库**: ${{ inputs.repo_id }}
+            - **文件**: ${{ inputs.filename }}
+            - **分块**: ${{ inputs.chunk_gb }}GB/块
+            - **合并**: `cat *.part_* > model.gguf`
+          files: chunks/*
+          fail_on_unmatched_files: true
