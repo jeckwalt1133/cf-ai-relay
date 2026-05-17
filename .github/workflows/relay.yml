@@ -39,7 +39,7 @@ jobs:
               {"role": "user", "content": $(echo '${{ inputs.prompt }}' | jq -Rs .)}
             ],
             "temperature": 0.9,
-            "max_tokens": 3000
+            "max_completion_tokens": 3000
           }
           EOF
           )")
