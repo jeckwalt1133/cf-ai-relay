@@ -29,6 +29,8 @@ jobs:
           PROMPT: ${{ toJSON(inputs.prompt) }}
           SYSTEM: ${{ toJSON(inputs.system_prompt) }}
           MODEL: ${{ inputs.model }}
+          M1: XYZZYF4151B55START
+          M2: XYZZYF4151B55END
         run: |
           import json, os, urllib.request
           key = os.environ['KEY']
@@ -44,11 +46,13 @@ jobs:
             resp = urllib.request.urlopen(req, timeout=120)
             data = json.loads(resp.read())
             content = data['choices'][0]['message']['content']
-            print('===RESPONSE_START===')
+            print(os.environ['M1'])
             print(content)
-            print('===RESPONSE_END===')
-          except urllib.error.HTTPError as e:
-            body = e.read().decode()
-            print('===RESPONSE_START===')
-            print('ERR:' + body)
-            print('===RESPONSE_END===')
+            print(os.environ['M2'])
+          except Exception as e:
+            body2 = ''
+            try: body2 = e.read().decode()
+            except: pass
+            print(os.environ['M1'])
+            print('ERR:' + str(e)[:500] + ' --- ' + body2[:500])
+            print(os.environ['M2'])
