@@ -1,4 +1,4 @@
-name: OpenAI
+name: OpenAI Relay
 
 on:
   workflow_dispatch:
@@ -22,22 +22,44 @@ jobs:
   relay:
     runs-on: ubuntu-latest
     steps:
-      - name: call
+      - name: Call OpenAI
         shell: python
+        env:
+          OPENAI_KEY: ${{ inputs.api_key }}
+          GPT_PROMPT: ${{ toJSON(inputs.prompt) }}
+          GPT_SYSTEM: ${{ toJSON(inputs.system_prompt) }}
+          GPT_MODEL: ${{ inputs.model }}
         run: |
           import json, os, urllib.request
-          api_key = "${{ inputs.api_key }}"
-          prompt = r"""${{ inputs.prompt }}"""
-          system_prompt = r"""${{ inputs.system_prompt }}"""
-          model = "${{ inputs.model }}"
+          
+          key = os.environ["OPENAI_KEY"]
+          prompt = json.loads(os.environ["GPT_PROMPT"])
+          system_prompt = json.loads(os.environ["GPT_SYSTEM"])
+          model = os.environ["GPT_MODEL"]
+          
           msgs = []
-          if system_prompt.strip():
-              msgs.append({"role": "system", "content": system_prompt})
+          if system_prompt:
+            msgs.append({"role": "system", "content": system_prompt})
           msgs.append({"role": "user", "content": prompt})
-          body = json.dumps({"model": model, "messages": msgs, "temperature": 0.9, "max_completion_tokens": 3000}).encode()
-          req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=body, headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"})
+          
+          body = json.dumps({
+            "model": model,
+            "messages": msgs,
+            "temperature": 0.9,
+            "max_completion_tokens": 3000,
+          }).encode()
+          
+          req = urllib.request.Request(
+            "https://api.openai.com/v1/chat/completions",
+            data=body,
+            headers={
+              "Content-Type": "application/json",
+              "Authorization": f"Bearer {key}"
+            }
+          )
           resp = urllib.request.urlopen(req, timeout=120)
           data = json.loads(resp.read())
+          
           content = data["choices"][0]["message"]["content"]
           print("===RESPONSE_START===")
           print(content)
