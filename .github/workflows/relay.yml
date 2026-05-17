@@ -23,36 +23,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: call
-        shell: bash
+        shell: python
         env:
           KEY: ${{ inputs.api_key }}
           P: ${{ toJSON(inputs.prompt) }}
           S: ${{ toJSON(inputs.system_prompt) }}
           M: ${{ inputs.model }}
         run: |
-          python3 << 'PYEOF'
-import json, os, urllib.request
-key = os.environ['KEY']
-p = json.loads(os.environ['P'])
-s = json.loads(os.environ['S'])
-m = os.environ['M']
-msgs = []
-if s: msgs.append({"role":"system","content":s})
-msgs.append({"role":"user","content":p})
-body = json.dumps({"model":m,"messages":msgs,"temperature":1,"max_completion_tokens":3000}).encode()
-req = urllib.request.Request("https://api.openai.com/v1/chat/completions",data=body,headers={"Content-Type":"application/json","Authorization":f"Bearer {key}"})
-try:
-    resp = urllib.request.urlopen(req, timeout=120)
-    data = json.loads(resp.read())
-    content = data["choices"][0]["message"]["content"]
-    print("ZZRESPZZ")
-    print(content)
-    print("ZZENDZZ")
-except Exception as e:
-    body2 = ""
-    try: body2 = e.read().decode()
-    except: pass
-    print("ZZRESPZZ")
-    print("ERR:" + str(e)[:500] + " --- " + body2[:500])
-    print("ZZENDZZ")
-PYEOF
+          import json, os, urllib.request
+          key = os.environ["KEY"]
+          p = json.loads(os.environ["P"])
+          s = json.loads(os.environ["S"])
+          m = os.environ["M"]
+          msgs = []
+          if s: msgs.append({"role":"system","content":s})
+          msgs.append({"role":"user","content":p})
+          body = json.dumps({"model":m,"messages":msgs,"temperature":1,"max_completion_tokens":3000}).encode()
+          req = urllib.request.Request("https://api.openai.com/v1/chat/completions",data=body,headers={"Content-Type":"application/json","Authorization":f"Bearer {key}"})
+          try:
+            resp = urllib.request.urlopen(req, timeout=120)
+            data = json.loads(resp.read())
+            content = data["choices"][0]["message"]["content"]
+            print("ZZRESPZZ")
+            print(content)
+            print("ZZENDZZ")
+          except Exception as e:
+            body2 = ""
+            try: body2 = e.read().decode()
+            except: pass
+            print("ZZRESPZZ")
+            print("ERR:" + str(e)[:500] + " --- " + body2[:500])
+            print("ZZENDZZ")
