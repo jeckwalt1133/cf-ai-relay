@@ -1,4 +1,4 @@
-name: OpenAI
+name: O
 
 on:
   workflow_dispatch:
@@ -12,11 +12,11 @@ on:
       system_prompt:
         required: false
         type: string
-        default: 
+        default: ""
       model:
         required: false
         type: string
-        default: gpt-5.1
+        default: "gpt-5.1"
 
 jobs:
   relay:
@@ -29,30 +29,32 @@ jobs:
           PROMPT: ${{ toJSON(inputs.prompt) }}
           SYSTEM: ${{ toJSON(inputs.system_prompt) }}
           MODEL: ${{ inputs.model }}
-          M1: XYZZYF4151B55START
-          M2: XYZZYF4151B55END
+          M1: XYZZY6178D7E1START
+          M2: XYZZY6178D7E1END
         run: |
           import json, os, urllib.request
-          key = os.environ['KEY']
-          prompt = json.loads(os.environ['PROMPT'])
-          system = json.loads(os.environ['SYSTEM'])
-          model = os.environ['MODEL']
+          key = os.environ["KEY"]
+          prompt = json.loads(os.environ["PROMPT"])
+          system = json.loads(os.environ["SYSTEM"])
+          model = os.environ["MODEL"]
+          m1 = os.environ["M1"]
+          m2 = os.environ["M2"]
           msgs = []
-          if system: msgs.append({'role':'system','content':system})
-          msgs.append({'role':'user','content':prompt})
-          body = json.dumps({'model':model,'messages':msgs,'temperature':1,'max_completion_tokens':3000}).encode()
-          req = urllib.request.Request('https://api.openai.com/v1/chat/completions',data=body,headers={'Content-Type':'application/json','Authorization':f'Bearer {key}'})
+          if system: msgs.append({"role":"system","content":system})
+          msgs.append({"role":"user","content":prompt})
+          body = json.dumps({"model":model,"messages":msgs,"temperature":1,"max_completion_tokens":3000}).encode()
+          req = urllib.request.Request("https://api.openai.com/v1/chat/completions",data=body,headers={"Content-Type":"application/json","Authorization":f"Bearer {key}"})
           try:
             resp = urllib.request.urlopen(req, timeout=120)
             data = json.loads(resp.read())
-            content = data['choices'][0]['message']['content']
-            print(os.environ['M1'])
+            content = data["choices"][0]["message"]["content"]
+            print(m1)
             print(content)
-            print(os.environ['M2'])
+            print(m2)
           except Exception as e:
-            body2 = ''
+            body2 = ""
             try: body2 = e.read().decode()
             except: pass
-            print(os.environ['M1'])
-            print('ERR:' + str(e)[:500] + ' --- ' + body2[:500])
-            print(os.environ['M2'])
+            print(m1)
+            print("ERR:" + str(e)[:500] + " --- " + body2[:500])
+            print(m2)
