@@ -23,38 +23,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: call
-        shell: python
+        shell: bash
         env:
           KEY: ${{ inputs.api_key }}
-          PROMPT: ${{ toJSON(inputs.prompt) }}
-          SYSTEM: ${{ toJSON(inputs.system_prompt) }}
-          MODEL: ${{ inputs.model }}
-          M1: XYZZY6178D7E1START
-          M2: XYZZY6178D7E1END
+          P: ${{ toJSON(inputs.prompt) }}
+          S: ${{ toJSON(inputs.system_prompt) }}
+          M: ${{ inputs.model }}
         run: |
-          import json, os, urllib.request
-          key = os.environ["KEY"]
-          prompt = json.loads(os.environ["PROMPT"])
-          system = json.loads(os.environ["SYSTEM"])
-          model = os.environ["MODEL"]
-          m1 = os.environ["M1"]
-          m2 = os.environ["M2"]
-          msgs = []
-          if system: msgs.append({"role":"system","content":system})
-          msgs.append({"role":"user","content":prompt})
-          body = json.dumps({"model":model,"messages":msgs,"temperature":1,"max_completion_tokens":3000}).encode()
-          req = urllib.request.Request("https://api.openai.com/v1/chat/completions",data=body,headers={"Content-Type":"application/json","Authorization":f"Bearer {key}"})
+          python3 -c "
+          import json,os,urllib.request
+          key=os.environ['KEY']
+          p=json.loads(os.environ['P'])
+          s=json.loads(os.environ['S'])
+          m=os.environ['M']
+          msgs=[]
+          if s: msgs.append({'role':'system','content':s})
+          msgs.append({'role':'user','content':p})
+          body=json.dumps({'model':m,'messages':msgs,'temperature':1,'max_completion_tokens':3000}).encode()
+          req=urllib.request.Request('https://api.openai.com/v1/chat/completions',data=body,headers={'Content-Type':'application/json','Authorization':f'Bearer {key}'})
           try:
-            resp = urllib.request.urlopen(req, timeout=120)
-            data = json.loads(resp.read())
-            content = data["choices"][0]["message"]["content"]
-            print(m1)
-            print(content)
-            print(m2)
+            resp=urllib.request.urlopen(req,timeout=120)
+            data=json.loads(resp.read())
+            print("XYZZYD3AA576CSTART"); print(data['choices'][0]['message']['content']); print('XYZZYD3AA576CEND')
           except Exception as e:
-            body2 = ""
-            try: body2 = e.read().decode()
-            except: pass
-            print(m1)
-            print("ERR:" + str(e)[:500] + " --- " + body2[:500])
-            print(m2)
+            print('XYZZYD3AA576CSTART'); print('ERR:'+str(e)); print('XYZZYD3AA576CEND')
+          "
