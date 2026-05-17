@@ -1,5 +1,5 @@
-# 墙外模型下载中继 —— GitHub Actions 在境外下载 HuggingFace 模型，分块传回
-name: HF Model Download Relay
+# 墙外模型下载中继
+name: HF Download Relay
 
 on:
   workflow_dispatch:
@@ -10,27 +10,25 @@ on:
         type: string
         default: 'Abiray/Sulphur-2-base-GGUF'
       filename:
-        description: '文件名(支持通配符)'
+        description: '文件名'
         required: true
         type: string
         default: 'sulphur_dev-Q4_K_M.gguf'
-      chunk_gb:
-        description: '分块大小(GB)'
-        required: false
-        type: string
-        default: '1.5'
 
 jobs:
-  download-and-release:
+  download:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
-      - name: 安装工具
+      - uses: actions/checkout@v4
+
+      - name: 安装 huggingface_hub
         run: pip install huggingface_hub
 
-      - name: 从 HuggingFace 下载模型
+      - name: 下载模型
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          REPO_ID: ${{ inputs.repo_id }}
+          FILENAME: ${{ inputs.filename }}
         run: |
           python3 << 'PYEOF'
           import os
@@ -39,12 +37,10 @@ jobs:
           repo = os.environ['REPO_ID']
           pattern = os.environ['FILENAME']
 
-          # 列出匹配文件
           files = list_repo_files(repo)
-          matches = [f for f in files if pattern.replace('*','') in f]
+          matches = [f for f in files if pattern in f]
           if not matches:
-              print(f'未找到匹配 "{pattern}" 的文件')
-              print(f'仓库文件: {files[:20]}')
+              print(f'未匹配，可用文件: {files}')
               exit(1)
 
           target = matches[0]
@@ -54,39 +50,17 @@ jobs:
               repo_id=repo,
               filename=target,
               resume_download=True,
-              local_dir='./model'
+              local_dir='./dl'
           )
-          print(f'下载完成: {path}')
-
-          # 记录文件名
-          with open('model_info.txt', 'w') as f:
-              f.write(f'{target}\n{path}\n')
+          import shutil
+          dest = os.path.basename(target)
+          shutil.copy2(path, dest)
+          print(f'文件: {dest} ({os.path.getsize(dest)} bytes)')
           PYEOF
-        env:
-          REPO_ID: ${{ inputs.repo_id }}
-          FILENAME: ${{ inputs.filename }}
 
-      - name: 分块
-        run: |
-          mkdir -p chunks
-          cd model
-          TARGET=$(head -1 ../model_info.txt)
-          CHUNK_SIZE=${{ inputs.chunk_gb }}G
-          split -b $CHUNK_SIZE -d "$TARGET" ../chunks/${TARGET}.part_
-          cd ../chunks
-          ls -lh
-          echo "总块数: $(ls -1 | wc -l)"
-
-      - name: 创建 Release 并上传分块
-        uses: softprops/action-gh-release@v2
+      - name: 上传为 Artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: model-${{ github.run_id }}
-          name: "${{ inputs.repo_id }} — ${{ inputs.filename }}"
-          body: |
-            ## 模型下载中继
-            - **仓库**: ${{ inputs.repo_id }}
-            - **文件**: ${{ inputs.filename }}
-            - **分块**: ${{ inputs.chunk_gb }}GB/块
-            - **合并**: `cat *.part_* > model.gguf`
-          files: chunks/*
-          fail_on_unmatched_files: true
+          name: model-file
+          path: '*.gguf'
+          retention-days: 7
