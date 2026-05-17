@@ -1,4 +1,4 @@
-name: OpenAI Relay
+name: OpenAI
 
 on:
   workflow_dispatch:
@@ -12,53 +12,33 @@ on:
       system_prompt:
         required: false
         type: string
-        default: ""
+        default: 
       model:
         required: false
         type: string
-        default: "gpt-5.1"
+        default: gpt-5.1
 
 jobs:
   relay:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Call OpenAI
+      - name: call
+        shell: python
         run: |
-          import json, os, urllib.request, sys
-
+          import json, os, urllib.request
           api_key = "${{ inputs.api_key }}"
-          prompt = ${{ toJSON(inputs.prompt) }}
-          system_prompt = ${{ toJSON(inputs.system_prompt) }}
+          prompt = r"""${{ inputs.prompt }}"""
+          system_prompt = r"""${{ inputs.system_prompt }}"""
           model = "${{ inputs.model }}"
-
           msgs = []
-          if system_prompt:
+          if system_prompt.strip():
               msgs.append({"role": "system", "content": system_prompt})
           msgs.append({"role": "user", "content": prompt})
-
-          body = json.dumps({
-              "model": model,
-              "messages": msgs,
-              "temperature": 0.9,
-              "max_completion_tokens": 3000,
-          }).encode()
-
-          req = urllib.request.Request(
-              "https://api.openai.com/v1/chat/completions",
-              data=body,
-              headers={
-                  "Content-Type": "application/json",
-                  "Authorization": f"Bearer {api_key}"
-              }
-          )
+          body = json.dumps({"model": model, "messages": msgs, "temperature": 0.9, "max_completion_tokens": 3000}).encode()
+          req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=body, headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"})
           resp = urllib.request.urlopen(req, timeout=120)
           data = json.loads(resp.read())
           content = data["choices"][0]["message"]["content"]
           print("===RESPONSE_START===")
           print(content)
           print("===RESPONSE_END===")
-        shell: python
