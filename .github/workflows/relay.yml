@@ -1,48 +1,64 @@
-name: OpenAI 中继
+name: OpenAI Relay
 
 on:
   workflow_dispatch:
     inputs:
       api_key:
-        description: 'OpenAI API Key'
         required: true
         type: string
       prompt:
-        description: '提示词'
         required: true
         type: string
       system_prompt:
-        description: '系统提示词'
         required: false
         type: string
-        default: ''
+        default: ""
       model:
-        description: '模型'
         required: false
         type: string
-        default: 'gpt-5.5'
+        default: "gpt-5.1"
 
 jobs:
   relay:
     runs-on: ubuntu-latest
     steps:
-      - name: 调用 OpenAI API
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Call OpenAI
         run: |
-          RESPONSE=$(curl -s https://api.openai.com/v1/chat/completions \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ inputs.api_key }}" \
-            -d "$(cat <<EOF
-          {
-            "model": "${{ inputs.model }}",
-            "messages": [
-              {"role": "system", "content": $(echo '${{ inputs.system_prompt }}' | jq -Rs .)},
-              {"role": "user", "content": $(echo '${{ inputs.prompt }}' | jq -Rs .)}
-            ],
-            "temperature": 0.9,
-            "max_completion_tokens": 3000
-          }
-          EOF
-          )")
-          echo "=== RESULT_START ==="
-          echo "$RESPONSE"
-          echo "=== RESULT_END ==="
+          import json, os, urllib.request, sys
+
+          api_key = "${{ inputs.api_key }}"
+          prompt = ${{ toJSON(inputs.prompt) }}
+          system_prompt = ${{ toJSON(inputs.system_prompt) }}
+          model = "${{ inputs.model }}"
+
+          msgs = []
+          if system_prompt:
+              msgs.append({"role": "system", "content": system_prompt})
+          msgs.append({"role": "user", "content": prompt})
+
+          body = json.dumps({
+              "model": model,
+              "messages": msgs,
+              "temperature": 0.9,
+              "max_completion_tokens": 3000,
+          }).encode()
+
+          req = urllib.request.Request(
+              "https://api.openai.com/v1/chat/completions",
+              data=body,
+              headers={
+                  "Content-Type": "application/json",
+                  "Authorization": f"Bearer {api_key}"
+              }
+          )
+          resp = urllib.request.urlopen(req, timeout=120)
+          data = json.loads(resp.read())
+          content = data["choices"][0]["message"]["content"]
+          print("===RESPONSE_START===")
+          print(content)
+          print("===RESPONSE_END===")
+        shell: python
