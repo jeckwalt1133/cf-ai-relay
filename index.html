@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>AI 网络中继 — 富贵军团</title>
+  <style>
+    body { font-family: monospace; max-width: 800px; margin: 50px auto; padding: 20px; background: #0a0a0a; color: #0f0; }
+    h1 { border-bottom: 2px solid #0f0; padding-bottom: 10px; }
+    .status { padding: 10px; margin: 10px 0; border-left: 3px solid #0f0; }
+    .blocked { border-left-color: #f00; color: #f00; }
+    code { background: #111; padding: 2px 6px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <h1>▸ 富贵军团 — AI 网络中继站</h1>
+  <p>Cloudflare Pages 全球边缘节点 | 中国直连可达</p>
+
+  <div class="status">
+    <strong>✅ OpenAI 中继</strong><br>
+    <code>POST /api/openai/v1/chat/completions</code>
+  </div>
+
+  <div class="status">
+    <strong>✅ Anthropic 中继</strong><br>
+    <code>POST /api/anthropic/v1/messages</code>
+  </div>
+
+  <div class="status" style="border-left-color: #ff0; color: #ff0;">
+    <strong>⚠️ 使用规则</strong><br>
+    仅限富贵军团内部使用。请勿滥用。
+  </div>
+
+  <p style="margin-top: 50px; font-size: 12px; color: #555;">
+    部署于 Cloudflare Pages | 版本 1.0 | 2026-05-17
+  </p>
+</body>
+</html>
