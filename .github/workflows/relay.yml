@@ -30,21 +30,29 @@ jobs:
           S: ${{ toJSON(inputs.system_prompt) }}
           M: ${{ inputs.model }}
         run: |
-          python3 -c "
-          import json,os,urllib.request
-          key=os.environ['KEY']
-          p=json.loads(os.environ['P'])
-          s=json.loads(os.environ['S'])
-          m=os.environ['M']
-          msgs=[]
-          if s: msgs.append({'role':'system','content':s})
-          msgs.append({'role':'user','content':p})
-          body=json.dumps({'model':m,'messages':msgs,'temperature':1,'max_completion_tokens':3000}).encode()
-          req=urllib.request.Request('https://api.openai.com/v1/chat/completions',data=body,headers={'Content-Type':'application/json','Authorization':f'Bearer {key}'})
-          try:
-            resp=urllib.request.urlopen(req,timeout=120)
-            data=json.loads(resp.read())
-            print("XYZZYD3AA576CSTART"); print(data['choices'][0]['message']['content']); print('XYZZYD3AA576CEND')
-          except Exception as e:
-            print('XYZZYD3AA576CSTART'); print('ERR:'+str(e)); print('XYZZYD3AA576CEND')
-          "
+          python3 << 'PYEOF'
+import json, os, urllib.request
+key = os.environ['KEY']
+p = json.loads(os.environ['P'])
+s = json.loads(os.environ['S'])
+m = os.environ['M']
+msgs = []
+if s: msgs.append({"role":"system","content":s})
+msgs.append({"role":"user","content":p})
+body = json.dumps({"model":m,"messages":msgs,"temperature":1,"max_completion_tokens":3000}).encode()
+req = urllib.request.Request("https://api.openai.com/v1/chat/completions",data=body,headers={"Content-Type":"application/json","Authorization":f"Bearer {key}"})
+try:
+    resp = urllib.request.urlopen(req, timeout=120)
+    data = json.loads(resp.read())
+    content = data["choices"][0]["message"]["content"]
+    print("<<<RESP>>>")
+    print(content)
+    print("<<<END>>>")
+except Exception as e:
+    body2 = ""
+    try: body2 = e.read().decode()
+    except: pass
+    print("<<<RESP>>>")
+    print("ERR:" + str(e)[:500] + " --- " + body2[:500])
+    print("<<<END>>>")
+PYEOF
