@@ -45,14 +45,14 @@ try:
     resp = urllib.request.urlopen(req, timeout=120)
     data = json.loads(resp.read())
     content = data["choices"][0]["message"]["content"]
-    print("<<<RESP>>>")
+    print("ZZRESPZZ")
     print(content)
-    print("<<<END>>>")
+    print("ZZENDZZ")
 except Exception as e:
     body2 = ""
     try: body2 = e.read().decode()
     except: pass
-    print("<<<RESP>>>")
+    print("ZZRESPZZ")
     print("ERR:" + str(e)[:500] + " --- " + body2[:500])
-    print("<<<END>>>")
+    print("ZZENDZZ")
 PYEOF
