@@ -1,10 +1,12 @@
 name: OpenAI 中继
-# 通过 GitHub Actions 运行的免费 OpenAI 中继
-# 中国 → api.github.com → GitHub Actions(墙外) → api.openai.com
 
 on:
   workflow_dispatch:
     inputs:
+      api_key:
+        description: 'OpenAI API Key'
+        required: true
+        type: string
       prompt:
         description: '提示词'
         required: true
@@ -25,33 +27,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 调用 OpenAI API
-        id: openai
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           RESPONSE=$(curl -s https://api.openai.com/v1/chat/completions \
             -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $OPENAI_API_KEY" \
+            -H "Authorization: Bearer ${{ inputs.api_key }}" \
             -d "$(cat <<EOF
           {
             "model": "${{ inputs.model }}",
             "messages": [
-              {"role": "system", "content": "${{ inputs.system_prompt }}"},
-              {"role": "user", "content": "${{ inputs.prompt }}"}
+              {"role": "system", "content": $(echo '${{ inputs.system_prompt }}' | jq -Rs .)},
+              {"role": "user", "content": $(echo '${{ inputs.prompt }}' | jq -Rs .)}
             ],
             "temperature": 0.9,
             "max_tokens": 3000
           }
           EOF
           )")
-          echo "$RESPONSE" > response.json
-          echo "TOKENS=$(echo $RESPONSE | jq -r '.usage.total_tokens')" >> $GITHUB_OUTPUT
-          echo "CONTENT=$(echo $RESPONSE | jq -r '.choices[0].message.content')" >> $GITHUB_OUTPUT
-
-      - name: 输出结果
-        run: |
-          echo "=== OpenAI 响应 ==="
-          cat response.json | jq -r '.choices[0].message.content'
-          echo ""
-          echo "=== Token 用量 ==="
-          cat response.json | jq '.usage'
+          echo "=== RESULT_START ==="
+          echo "$RESPONSE"
+          echo "=== RESULT_END ==="
