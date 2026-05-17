@@ -38,7 +38,7 @@ jobs:
           msgs = []
           if system: msgs.append({'role':'system','content':system})
           msgs.append({'role':'user','content':prompt})
-          body = json.dumps({'model':model,'messages':msgs,'temperature':0.9,'max_completion_tokens':3000}).encode()
+          body = json.dumps({'model':model,'messages':msgs,'temperature':1,'max_completion_tokens':3000}).encode()
           req = urllib.request.Request('https://api.openai.com/v1/chat/completions',data=body,headers={'Content-Type':'application/json','Authorization':f'Bearer {key}'})
           try:
             resp = urllib.request.urlopen(req, timeout=120)
@@ -50,5 +50,5 @@ jobs:
           except urllib.error.HTTPError as e:
             body = e.read().decode()
             print('===RESPONSE_START===')
-            print('HTTP_ERROR:' + body)
+            print('ERR:' + body)
             print('===RESPONSE_END===')
