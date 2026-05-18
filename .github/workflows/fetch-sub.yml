@@ -1,0 +1,36 @@
+
+name: Fetch Free Clash Sub
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch subscription
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl -sL "https://static.v2rayshare.net/2026/05/20260516.yaml" -o clash-sub.yaml 2>&1 ||           curl -sL "https://v2rayse.com/fs/public/20260512/free-node-share-0800.yaml" -o clash-sub.yaml 2>&1 ||           curl -sL "https://raw.githubusercontent.com/tg-nav/nodeshare/main/clash.yaml" -o clash-sub.yaml 2>&1
+          
+          if [ -s clash-sub.yaml ]; then
+            echo "Got subscription file:"
+            wc -l clash-sub.yaml
+            head -20 clash-sub.yaml
+            # Upload to repo
+            mkdir -p public
+            cp clash-sub.yaml public/
+            git config user.name "Skynet"
+            git config user.email "skynet@cf-ai-relay.dev"
+            git add public/clash-sub.yaml
+            git commit -m "Add clash subscription" || echo "no changes"
+            git push || echo "push failed"
+          else
+            echo "Failed to fetch subscription"
+          fi
