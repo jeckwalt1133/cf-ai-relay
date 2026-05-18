@@ -1,4 +1,4 @@
-name: Download LTX Encoder
+name: Download Encoder to Repo
 on:
   workflow_dispatch:
 
@@ -10,30 +10,40 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Install HF CLI
-        run: pip install huggingface_hub
-
-      - name: Download Text Encoder
+      - uses: actions/checkout@v4
+      
+      - name: Download encoder from HF
         run: |
+          pip install huggingface_hub
           python3 << 'PYEOF'
           from huggingface_hub import snapshot_download
-          import os
-          print('Downloading LTX2.3 text encoder...')
+          import os, shutil
+          os.makedirs('encoder_files', exist_ok=True)
           snapshot_download(
               'Kijai/LTX2.3_comfy',
-              allow_patterns=['*text_encoder*', '*tokenizer*', '*text*', '*config*'],
-              local_dir='./encoder',
+              allow_patterns=['*text_encoder*', '*tokenizer*', '*text*', '*config*', '*gemma*'],
+              local_dir='encoder_files',
               local_dir_use_symlinks=False
           )
-          print('Files:')
-          for f in os.listdir('./encoder'):
-              sz = os.path.getsize(os.path.join('./encoder', f))
-              print(f'  {f} ({sz//1024//1024}MB)')
+          # 列出并显示大小
+          for f in os.listdir('encoder_files'):
+              sz = os.path.getsize(os.path.join('encoder_files', f))
+              print(f'{f}: {sz//1024//1024}MB')
           PYEOF
-
-      - name: Upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: ltx-encoder
-          path: ./encoder/*
-          retention-days: 3
+          
+      - name: Commit to repo
+        run: |
+          git config user.name 'Skynet'
+          git config user.email 'skynet@cf-ai-relay.dev'
+          # 只添加小块文件(<50MB), 跳过大文件
+          for f in encoder_files/*; do
+              sz=
+              if [  -lt 50000000 ]; then
+                  cp "" repo_encoder/
+              fi
+          done
+          mkdir -p repo_encoder
+          cp encoder_files/* repo_encoder/ 2>/dev/null || true
+          git add repo_encoder/
+          git commit -m 'Add encoder files' || echo 'No changes'
+          git push || echo 'Push failed'
