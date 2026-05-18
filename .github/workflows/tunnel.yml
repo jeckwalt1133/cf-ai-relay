@@ -1,19 +1,14 @@
-name: GitTunnel - Permanent GFW Bypass
+name: GitTunnel v2
 on:
   workflow_dispatch:
     inputs:
-      task:
-        description: '任务类型: download / proxy / execute'
+      url:
+        description: '下载URL'
         required: true
         type: string
-        default: 'download'
-      url:
-        description: '下载URL (task=download时)'
-        required: false
-        type: string
-      command:
-        description: '执行命令 (task=execute时)'
-        required: false
+      filename:
+        description: '保存文件名'
+        required: true
         type: string
 
 permissions:
@@ -24,44 +19,50 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Download Task
-        if: inputs.task == 'download'
+      - name: Download and Push to Repo
         env:
-          DOWNLOAD_URL: ${{ inputs.url }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
+          # 下载
           mkdir -p tunnel_data
           cd tunnel_data
-
-          # 下载文件
-          FILENAME=$(basename "$DOWNLOAD_URL" | cut -d'?' -f1)
-          echo "下载: $DOWNLOAD_URL -> $FILENAME"
-          curl -sL "$DOWNLOAD_URL" -o "$FILENAME" || wget -q "$DOWNLOAD_URL" -O "$FILENAME"
-
+          FILENAME="${{ inputs.filename }}"
+          echo "下载: ${{ inputs.url }}"
+          curl -sL "${{ inputs.url }}" -o "$FILENAME" 2>&1 || wget -q "${{ inputs.url }}" -O "$FILENAME" 2>&1
           SIZE=$(stat -c%s "$FILENAME" 2>/dev/null || ls -l "$FILENAME" | awk '{print $5}')
-          echo "文件: $FILENAME ($SIZE bytes)"
+          echo "下载完成: $FILENAME ($SIZE bytes)"
+          cd ..
 
-          # 拆成小块 (<50MB)
-          split -b 45M -d "$FILENAME" "chunk_"
-          rm "$FILENAME"
+          # 用 GitHub API 直接上传文件到 repo
+          python3 << 'PYEOF'
+          import os, json, base64, urllib.request
 
-          echo "分块完成: $(ls | wc -l) 个文件"
-          ls -lh
+          token = os.environ['GH_TOKEN']
+          repo = os.environ['REPO']
+          api_base = f'https://api.github.com/repos/{repo}/contents/tunnel_data'
 
-      - name: Execute Task
-        if: inputs.task == 'execute'
-        run: |
-          ${{ inputs.command }}
+          fname = os.environ.get('FILENAME', 'download.bin')
+          fpath = f'tunnel_data/{fname}'
+          with open(fpath, 'rb') as f:
+              content = base64.b64encode(f.read()).decode()
 
-      - name: Commit to Repo
-        run: |
-          git config user.name "GitTunnel"
-          git config user.email "tunnel@skynet.dev"
-          git add tunnel_data/
-          git commit -m "Tunnel: ${{ inputs.task }}" || echo "no changes"
-          git push origin master || echo "push failed, trying force..."
-          git pull --rebase origin master 2>/dev/null || true
-          git push origin master 2>/dev/null || echo "push最终失败"
+          body = json.dumps({
+              'message': f'Add {fname}',
+              'content': content,
+              'branch': 'master'
+          }).encode()
+
+          url = f'{api_base}/{fname}'
+          req = urllib.request.Request(url, data=body, method='PUT')
+          req.add_header('Authorization', f'Bearer {token}')
+          req.add_header('Accept', 'application/vnd.github+json')
+          req.add_header('Content-Type', 'application/json')
+
+          try:
+              resp = urllib.request.urlopen(req, timeout=120)
+              print(f'✅ 上传成功: {fname}')
+          except urllib.error.HTTPError as e:
+              err = e.read().decode()[:300]
+              print(f'❌ 上传失败: {err}')
+          PYEOF
