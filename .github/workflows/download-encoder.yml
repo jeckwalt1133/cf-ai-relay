@@ -11,39 +11,50 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Download encoder from HF
+
+      - name: Download from HF and upload to repo
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           pip install huggingface_hub
           python3 << 'PYEOF'
           from huggingface_hub import snapshot_download
-          import os, shutil
-          os.makedirs('encoder_files', exist_ok=True)
+          import os, base64, json, urllib.request, subprocess
+
+          # 下载编码器
+          os.makedirs('encoder_tmp', exist_ok=True)
           snapshot_download(
               'Kijai/LTX2.3_comfy',
-              allow_patterns=['*text_encoder*', '*tokenizer*', '*text*', '*config*', '*gemma*'],
-              local_dir='encoder_files',
+              allow_patterns=['*text_encoder*','*tokenizer*','*text*','*config*','*gemma*'],
+              local_dir='encoder_tmp',
               local_dir_use_symlinks=False
           )
-          # 列出并显示大小
-          for f in os.listdir('encoder_files'):
-              sz = os.path.getsize(os.path.join('encoder_files', f))
-              print(f'{f}: {sz//1024//1024}MB')
+
+          token = os.environ['GH_TOKEN']
+          repo = os.environ['GITHUB_REPOSITORY']
+          api_base = f'https://api.github.com/repos/{repo}/contents/encoder_files'
+
+          # 上传每个文件到 GitHub repo
+          for fname in os.listdir('encoder_tmp'):
+              fpath = os.path.join('encoder_tmp', fname)
+              with open(fpath, 'rb') as f:
+                  content = base64.b64encode(f.read()).decode()
+
+              body = json.dumps({
+                  'message': f'Add {fname}',
+                  'content': content,
+                  'branch': 'master'
+              }).encode()
+
+              url = f'{api_base}/{fname}'
+              req = urllib.request.Request(url, data=body, method='PUT')
+              req.add_header('Authorization', f'Bearer {token}')
+              req.add_header('Accept', 'application/vnd.github+json')
+              req.add_header('Content-Type', 'application/json')
+
+              try:
+                  resp = urllib.request.urlopen(req, timeout=60)
+                  print(f'  ✅ {fname} ({os.path.getsize(fpath)//1024//1024}MB)')
+              except Exception as e:
+                  print(f'  ❌ {fname}: {e}')
           PYEOF
-          
-      - name: Commit to repo
-        run: |
-          git config user.name 'Skynet'
-          git config user.email 'skynet@cf-ai-relay.dev'
-          # 只添加小块文件(<50MB), 跳过大文件
-          for f in encoder_files/*; do
-              sz=
-              if [  -lt 50000000 ]; then
-                  cp "" repo_encoder/
-              fi
-          done
-          mkdir -p repo_encoder
-          cp encoder_files/* repo_encoder/ 2>/dev/null || true
-          git add repo_encoder/
-          git commit -m 'Add encoder files' || echo 'No changes'
-          git push || echo 'Push failed'
