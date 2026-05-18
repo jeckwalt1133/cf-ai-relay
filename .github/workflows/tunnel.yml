@@ -5,11 +5,9 @@ on:
       repo:
         description: 'HF仓库'
         required: true
-        default: 'Kijai/LTX2.3_comfy'
       pattern:
         description: '文件匹配'
         required: true
-        default: '*text_encoder* *tokenizer* *text* *config* *gemma*'
 
 permissions:
   contents: write
@@ -20,15 +18,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-
       - name: Download
         run: |
           pip install huggingface_hub -q
           python3 -c "
           from huggingface_hub import snapshot_download
           import os, subprocess as sp
-          repo = '""${{ inputs.repo }}""'
-          patterns = '""${{ inputs.pattern }}""'.split()
+          repo = '${{ inputs.repo }}'
+          patterns = '${{ inputs.pattern }}'.split()
           os.makedirs('tunnel_data', exist_ok=True)
           snapshot_download(repo, allow_patterns=patterns, local_dir='tunnel_data', local_dir_use_symlinks=False)
           for f in os.listdir('tunnel_data'):
@@ -38,25 +35,10 @@ jobs:
                   sp.run(['split', '-b', '80M', '-d', f'tunnel_data/{f}', f'tunnel_data/{f}.part_'])
                   os.remove(f'tunnel_data/{f}')
           "
-
-      - name: Push via gh CLI
+      - name: Push
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git config user.name "Tunnel"
-          git config user.email "tunnel@skynet.dev"
-          git add tunnel_data/
-          git commit -m "tunnel: ${{ inputs.repo }}" || echo "no changes"
-          git push origin HEAD:master 2>&1 || echo "git push failed, trying gh..."
-          # fallback: use gh CLI to upload files
-          for f in tunnel_data/*; do
-            fname=$(basename "$f")
-            if [ -f "$f" ]; then
-              echo "uploading $fname..."
-              gh api repos/${{ github.repository }}/contents/tunnel_data/$fname \
-                -X PUT \
-                -f message="tunnel upload" \
-                -f content="$(base64 -w0 "$f")" \
-                -f branch=master 2>&1 || echo "api upload failed for $fname"
-            fi
-          done
+          git config user.name T && git config user.email t@t.dev
+          git add tunnel_data/ && git commit -m t || true
+          git push origin HEAD:master 2>&1 || echo "git push failed"
