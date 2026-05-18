@@ -1,42 +1,22 @@
-name: Download Torch CUDA Only
+name: Release PyTorch CUDA Wheel
 on:
   workflow_dispatch:
 
 jobs:
-  download:
+  release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - name: Download torch only
+      - name: Download torch whl
         run: |
-          mkdir -p chunks
           wget -q "https://download.pytorch.org/whl/cu126/torch-2.6.0%2Bcu126-cp311-cp311-win_amd64.whl" -O torch.whl
           ls -lh torch.whl
-          split -b 150M -d torch.whl chunks/torch_part_
-          ls -lh chunks/
           
-      - name: Upload chunk 0
-        uses: actions/upload-artifact@v4
+      - name: Create Release and Upload
+        uses: softprops/action-gh-release@v2
         with:
-          name: torch-part-0
-          path: chunks/torch_part_00
-          retention-days: 3
-      - name: Upload chunk 1
-        uses: actions/upload-artifact@v4
-        with:
-          name: torch-part-1
-          path: chunks/torch_part_01
-          retention-days: 3
-      - name: Upload chunk 2
-        uses: actions/upload-artifact@v4
-        with:
-          name: torch-part-2
-          path: chunks/torch_part_02
-          retention-days: 3
-      - name: Upload remaining
-        run: |
-          for f in chunks/torch_part_*; do
-            name=
-            if [ "" != "torch_part_00" ] && [ "" != "torch_part_01" ] && [ "" != "torch_part_02" ]; then
-              echo "Uploading ..."
-            fi
-          done
+          tag_name: torch-cu126
+          name: "PyTorch 2.6.0 CUDA 12.6 for Windows"
+          body: "torch-2.6.0+cu126-cp311-cp311-win_amd64.whl"
+          files: torch.whl
