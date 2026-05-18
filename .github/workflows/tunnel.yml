@@ -1,38 +1,27 @@
-name: GitTunnel v3
+name: List Encoder Files
 on:
   workflow_dispatch:
-    inputs:
-      url:
-        description: '下载URL'
-        required: true
-      filename:
-        description: '文件名'
-        required: true
 
 permissions:
   contents: write
 
 jobs:
-  tunnel:
+  list:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download
+      - name: List HF files
         run: |
-          mkdir -p tunnel_data
-          cd tunnel_data
-          curl -sL "${{ inputs.url }}" -o "${{ inputs.filename }}" -w "HTTP %{http_code}\n" || wget -q "${{ inputs.url }}" -O "${{ inputs.filename }}"
-          ls -la
-          cd ..
-
-      - name: Commit
-        run: |
-          git config user.name "Tunnel"
-          git config user.email "tunnel@skynet.dev"
-          git add tunnel_data/
-          git commit -m "tunnel: ${{ inputs.filename }}" 2>&1
-          git push origin HEAD:master 2>&1
+          pip install huggingface_hub -q
+          python3 << 'PYEOF'
+          from huggingface_hub import list_repo_files
+          files = list_repo_files('Kijai/LTX2.3_comfy')
+          # 只看 encoder 相关文件
+          for f in files:
+              if any(kw in f.lower() for kw in ['text', 'encoder', 'token', 'config', 'gemma', 'model']):
+                  print(f)
+          PYEOF
