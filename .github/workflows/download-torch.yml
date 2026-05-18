@@ -1,4 +1,4 @@
-name: Download PyTorch CUDA Wheels (Split)
+name: Download Torch CUDA Only
 on:
   workflow_dispatch:
 
@@ -6,25 +6,37 @@ jobs:
   download:
     runs-on: ubuntu-latest
     steps:
-      - name: Download torch CUDA cu126 wheels
+      - name: Download torch only
         run: |
-          mkdir -p wheels chunks
-          BASE="https://download.pytorch.org/whl/cu126"
-          for pkg in             "torch-2.6.0%2Bcu126-cp311-cp311-win_amd64.whl"             "torchvision-0.21.0%2Bcu126-cp311-cp311-win_amd64.whl"             "torchaudio-2.6.0%2Bcu126-cp311-cp311-win_amd64.whl"; do
-            wget -q "$BASE/$pkg" -P wheels/ && echo "OK $pkg" || echo "FAIL $pkg"
-          done
-          ls -lh wheels/
-          # 拆成30MB小块
-          cd wheels
-          for f in *.whl; do
-            split -b 30M -d "$f" "../chunks/${f}_part_"
-          done
-          cd ..
+          mkdir -p chunks
+          wget -q "https://download.pytorch.org/whl/cu126/torch-2.6.0%2Bcu126-cp311-cp311-win_amd64.whl" -O torch.whl
+          ls -lh torch.whl
+          split -b 150M -d torch.whl chunks/torch_part_
           ls -lh chunks/
           
-      - name: Upload chunks
+      - name: Upload chunk 0
         uses: actions/upload-artifact@v4
         with:
-          name: pytorch-chunks
-          path: chunks/*
+          name: torch-part-0
+          path: chunks/torch_part_00
           retention-days: 3
+      - name: Upload chunk 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: torch-part-1
+          path: chunks/torch_part_01
+          retention-days: 3
+      - name: Upload chunk 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: torch-part-2
+          path: chunks/torch_part_02
+          retention-days: 3
+      - name: Upload remaining
+        run: |
+          for f in chunks/torch_part_*; do
+            name=
+            if [ "" != "torch_part_00" ] && [ "" != "torch_part_01" ] && [ "" != "torch_part_02" ]; then
+              echo "Uploading ..."
+            fi
+          done
