@@ -20,49 +20,43 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download and Commit
+      - name: Download
         run: |
           pip install huggingface_hub -q
-          python3 << 'PYEOF'
+          python3 -c "
           from huggingface_hub import snapshot_download
-          import os, subprocess
-
-          repo = os.environ['REPO_ID']
-          patterns = os.environ['PATTERNS'].split()
-
+          import os, subprocess as sp
+          repo = '""${{ inputs.repo }}""'
+          patterns = '""${{ inputs.pattern }}""'.split()
           os.makedirs('tunnel_data', exist_ok=True)
-          snapshot_download(
-              repo,
-              allow_patterns=patterns,
-              local_dir='tunnel_data',
-              local_dir_use_symlinks=False
-          )
+          snapshot_download(repo, allow_patterns=patterns, local_dir='tunnel_data', local_dir_use_symlinks=False)
+          for f in os.listdir('tunnel_data'):
+              sz = os.path.getsize(f'tunnel_data/{f}')
+              print(f'{f}: {sz//1024//1024}MB')
+              if sz > 90_000_000:
+                  sp.run(['split', '-b', '80M', '-d', f'tunnel_data/{f}', f'tunnel_data/{f}.part_'])
+                  os.remove(f'tunnel_data/{f}')
+          "
 
-          # 检查每个文件大小，如果>90MB就分块
-          for fname in os.listdir('tunnel_data'):
-              fpath = os.path.join('tunnel_data', fname)
-              size = os.path.getsize(fpath)
-              print(f'{fname}: {size//1024//1024}MB')
-              if size > 90_000_000:
-                  print(f'  拆分 {fname}...')
-                  subprocess.run(['split', '-b', '80M', '-d', fpath, f'{fpath}.part_'], check=True)
-                  os.remove(fpath)
-
-          print('\nDone. Files:')
-          for f in sorted(os.listdir('tunnel_data')):
-              print(f'  {f}')
-          PYEOF
+      - name: Push via gh CLI
         env:
-          REPO_ID: ${{ inputs.repo }}
-          PATTERNS: ${{ inputs.pattern }}
-
-      - name: Push to Repo
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "Tunnel"
           git config user.email "tunnel@skynet.dev"
-          git add tunnel_data/ 2>&1
-          git commit -m "tunnel: ${{ inputs.repo }}" 2>&1
-          git push origin HEAD:master 2>&1
+          git add tunnel_data/
+          git commit -m "tunnel: ${{ inputs.repo }}" || echo "no changes"
+          git push origin HEAD:master 2>&1 || echo "git push failed, trying gh..."
+          # fallback: use gh CLI to upload files
+          for f in tunnel_data/*; do
+            fname=$(basename "$f")
+            if [ -f "$f" ]; then
+              echo "uploading $fname..."
+              gh api repos/${{ github.repository }}/contents/tunnel_data/$fname \
+                -X PUT \
+                -f message="tunnel upload" \
+                -f content="$(base64 -w0 "$f")" \
+                -f branch=master 2>&1 || echo "api upload failed for $fname"
+            fi
+          done
