@@ -1,5 +1,4 @@
-name: Download PyTorch CUDA Wheel
-
+name: Download PyTorch CUDA Wheels
 on:
   workflow_dispatch:
 
@@ -7,14 +6,20 @@ jobs:
   download:
     runs-on: ubuntu-latest
     steps:
-      - name: Download torch wheel
+      - name: Download torch CUDA wheels
         run: |
-          pip download torch torchvision torchaudio             --index-url https://download.pytorch.org/whl/cu131             --platform win_amd64             --python-version 3.11             --only-binary :all:             -d ./wheels
-          ls -lh ./wheels/
-      
+          mkdir -p wheels
+          BASE="https://download.pytorch.org/whl/cu131"
+          # Download torch, torchvision, torchaudio for Windows Python 3.11
+          for pkg in "torch-2.6.0+cu131-cp311-cp311-win_amd64.whl" "torchvision-0.21.0+cu131-cp311-cp311-win_amd64.whl" "torchaudio-2.6.0+cu131-cp311-cp311-win_amd64.whl"; do
+            echo "Downloading $pkg..."
+            wget -q "$BASE/$pkg" -P wheels/ || echo "Failed: $pkg"
+          done
+          ls -lh wheels/
+          
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: pytorch-cu131-wheels
-          path: ./wheels/*.whl
+          name: pytorch-cuda-wheels
+          path: wheels/*.whl
           retention-days: 3
