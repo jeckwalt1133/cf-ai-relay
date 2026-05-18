@@ -1,4 +1,4 @@
-name: Download Encoder to Repo
+name: Upload Encoder Split
 on:
   workflow_dispatch:
 
@@ -12,16 +12,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download from HF and upload to repo
+      - name: Download and upload encoder files
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           pip install huggingface_hub
           python3 << 'PYEOF'
           from huggingface_hub import snapshot_download
-          import os, base64, json, urllib.request, subprocess
+          import os, base64, json, urllib.request
 
-          # 下载编码器
           os.makedirs('encoder_tmp', exist_ok=True)
           snapshot_download(
               'Kijai/LTX2.3_comfy',
@@ -33,28 +32,44 @@ jobs:
           token = os.environ['GH_TOKEN']
           repo = os.environ['GITHUB_REPOSITORY']
           api_base = f'https://api.github.com/repos/{repo}/contents/encoder_files'
+          MAX_SIZE = 40 * 1024 * 1024  # 40MB max per file
 
-          # 上传每个文件到 GitHub repo
-          for fname in os.listdir('encoder_tmp'):
+          total_uploaded = 0
+          for fname in sorted(os.listdir('encoder_tmp')):
               fpath = os.path.join('encoder_tmp', fname)
+              fsize = os.path.getsize(fpath)
+
               with open(fpath, 'rb') as f:
-                  content = base64.b64encode(f.read()).decode()
+                  data = f.read()
 
-              body = json.dumps({
-                  'message': f'Add {fname}',
-                  'content': content,
-                  'branch': 'master'
-              }).encode()
+              # 如果文件大于40MB，拆分成多个
+              parts = []
+              if fsize > MAX_SIZE:
+                  for i in range(0, len(data), MAX_SIZE):
+                      parts.append((f'{fname}.part{i//MAX_SIZE:04d}', data[i:i+MAX_SIZE]))
+              else:
+                  parts = [(fname, data)]
 
-              url = f'{api_base}/{fname}'
-              req = urllib.request.Request(url, data=body, method='PUT')
-              req.add_header('Authorization', f'Bearer {token}')
-              req.add_header('Accept', 'application/vnd.github+json')
-              req.add_header('Content-Type', 'application/json')
+              for part_name, part_data in parts:
+                  content_b64 = base64.b64encode(part_data).decode()
+                  body = json.dumps({
+                      'message': f'Add {part_name}',
+                      'content': content_b64,
+                      'branch': 'master'
+                  }).encode()
 
-              try:
-                  resp = urllib.request.urlopen(req, timeout=60)
-                  print(f'  ✅ {fname} ({os.path.getsize(fpath)//1024//1024}MB)')
-              except Exception as e:
-                  print(f'  ❌ {fname}: {e}')
+                  url = f'{api_base}/{part_name}'
+                  req = urllib.request.Request(url, data=body, method='PUT')
+                  req.add_header('Authorization', f'Bearer {token}')
+                  req.add_header('Accept', 'application/vnd.github+json')
+                  req.add_header('Content-Type', 'application/json')
+
+                  try:
+                      resp = urllib.request.urlopen(req, timeout=120)
+                      print(f'  ✅ {part_name} ({len(part_data)//1024//1024}MB)')
+                      total_uploaded += len(part_data)
+                  except urllib.error.HTTPError as e:
+                      err = e.read().decode()[:200]
+                      print(f'  ❌ {part_name}: {err}')
+          print(f'\nTotal uploaded: {total_uploaded//1024//1024}MB')
           PYEOF
