@@ -1,4 +1,4 @@
-name: Release Torch via gh CLI
+name: Release Torch Wheel via API
 on:
   workflow_dispatch:
 
@@ -6,13 +6,59 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Download torch
+      - name: Download and Upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           wget -q "https://download.pytorch.org/whl/cu126/torch-2.6.0%2Bcu126-cp311-cp311-win_amd64.whl" -O torch.whl
           ls -lh torch.whl
-          
-      - name: Create Release and Upload via gh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create torch-cu126 torch.whl             --title "PyTorch 2.6.0 CUDA 12.6 Windows"             --notes "torch-2.6.0+cu126-cp311-cp311-win_amd64.whl"             --repo ${{ github.repository }}
+          python3 << 'PYEOF'
+          import os, json, urllib.request, urllib.error
+
+          token = os.environ['GH_TOKEN']
+          repo = os.environ['GITHUB_REPOSITORY']
+          filename = 'torch.whl'
+          size = os.path.getsize(filename)
+
+          # 创建 Release
+          body = json.dumps({
+              'tag_name': 'torch-cuda',
+              'name': 'PyTorch CUDA 12.6',
+              'body': f'{filename} ({size} bytes)',
+              'draft': False,
+              'prerelease': False
+          }).encode()
+
+          req = urllib.request.Request(
+              f'https://api.github.com/repos/{repo}/releases',
+              data=body,
+              headers={
+                  'Authorization': f'Bearer {token}',
+                  'Accept': 'application/vnd.github+json',
+                  'Content-Type': 'application/json'
+              }
+          )
+          resp = urllib.request.urlopen(req)
+          release = json.loads(resp.read())
+          release_id = release['id']
+          upload_url = release['upload_url'].split('{')[0]
+          print(f'Release ID: {release_id}')
+
+          # 上传 asset
+          with open(filename, 'rb') as f:
+              data = f.read()
+
+          upload_req = urllib.request.Request(
+              f'{upload_url}?name={filename}',
+              data=data,
+              headers={
+                  'Authorization': f'Bearer {token}',
+                  'Content-Type': 'application/octet-stream',
+                  'Accept': 'application/vnd.github+json'
+              },
+              method='POST'
+          )
+          upload_resp = urllib.request.urlopen(upload_req, timeout=600)
+          asset = json.loads(upload_resp.read())
+          print(f'Uploaded: {asset["browser_download_url"]}')
+          PYEOF
