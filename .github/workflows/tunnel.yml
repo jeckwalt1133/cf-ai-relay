@@ -1,0 +1,67 @@
+name: GitTunnel - Permanent GFW Bypass
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: '任务类型: download / proxy / execute'
+        required: true
+        type: string
+        default: 'download'
+      url:
+        description: '下载URL (task=download时)'
+        required: false
+        type: string
+      command:
+        description: '执行命令 (task=execute时)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  tunnel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Download Task
+        if: inputs.task == 'download'
+        env:
+          DOWNLOAD_URL: ${{ inputs.url }}
+        run: |
+          mkdir -p tunnel_data
+          cd tunnel_data
+
+          # 下载文件
+          FILENAME=$(basename "$DOWNLOAD_URL" | cut -d'?' -f1)
+          echo "下载: $DOWNLOAD_URL -> $FILENAME"
+          curl -sL "$DOWNLOAD_URL" -o "$FILENAME" || wget -q "$DOWNLOAD_URL" -O "$FILENAME"
+
+          SIZE=$(stat -c%s "$FILENAME" 2>/dev/null || ls -l "$FILENAME" | awk '{print $5}')
+          echo "文件: $FILENAME ($SIZE bytes)"
+
+          # 拆成小块 (<50MB)
+          split -b 45M -d "$FILENAME" "chunk_"
+          rm "$FILENAME"
+
+          echo "分块完成: $(ls | wc -l) 个文件"
+          ls -lh
+
+      - name: Execute Task
+        if: inputs.task == 'execute'
+        run: |
+          ${{ inputs.command }}
+
+      - name: Commit to Repo
+        run: |
+          git config user.name "GitTunnel"
+          git config user.email "tunnel@skynet.dev"
+          git add tunnel_data/
+          git commit -m "Tunnel: ${{ inputs.task }}" || echo "no changes"
+          git push origin master || echo "push failed, trying force..."
+          git pull --rebase origin master 2>/dev/null || true
+          git push origin master 2>/dev/null || echo "push最终失败"
