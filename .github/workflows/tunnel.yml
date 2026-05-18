@@ -1,27 +1,68 @@
-name: List Encoder Files
+name: GitTunnel
 on:
   workflow_dispatch:
+    inputs:
+      repo:
+        description: 'HF仓库'
+        required: true
+        default: 'Kijai/LTX2.3_comfy'
+      pattern:
+        description: '文件匹配'
+        required: true
+        default: '*text_encoder* *tokenizer* *text* *config* *gemma*'
 
 permissions:
   contents: write
 
 jobs:
-  list:
+  tunnel:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: List HF files
+      - name: Download and Commit
         run: |
           pip install huggingface_hub -q
           python3 << 'PYEOF'
-          from huggingface_hub import list_repo_files
-          files = list_repo_files('Kijai/LTX2.3_comfy')
-          # 只看 encoder 相关文件
-          for f in files:
-              if any(kw in f.lower() for kw in ['text', 'encoder', 'token', 'config', 'gemma', 'model']):
-                  print(f)
+          from huggingface_hub import snapshot_download
+          import os, subprocess
+
+          repo = os.environ['REPO_ID']
+          patterns = os.environ['PATTERNS'].split()
+
+          os.makedirs('tunnel_data', exist_ok=True)
+          snapshot_download(
+              repo,
+              allow_patterns=patterns,
+              local_dir='tunnel_data',
+              local_dir_use_symlinks=False
+          )
+
+          # 检查每个文件大小，如果>90MB就分块
+          for fname in os.listdir('tunnel_data'):
+              fpath = os.path.join('tunnel_data', fname)
+              size = os.path.getsize(fpath)
+              print(f'{fname}: {size//1024//1024}MB')
+              if size > 90_000_000:
+                  print(f'  拆分 {fname}...')
+                  subprocess.run(['split', '-b', '80M', '-d', fpath, f'{fpath}.part_'], check=True)
+                  os.remove(fpath)
+
+          print('\nDone. Files:')
+          for f in sorted(os.listdir('tunnel_data')):
+              print(f'  {f}')
           PYEOF
+        env:
+          REPO_ID: ${{ inputs.repo }}
+          PATTERNS: ${{ inputs.pattern }}
+
+      - name: Push to Repo
+        run: |
+          git config user.name "Tunnel"
+          git config user.email "tunnel@skynet.dev"
+          git add tunnel_data/ 2>&1
+          git commit -m "tunnel: ${{ inputs.repo }}" 2>&1
+          git push origin HEAD:master 2>&1
