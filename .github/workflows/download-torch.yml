@@ -1,22 +1,18 @@
-name: Release PyTorch CUDA Wheel
+name: Release Torch via gh CLI
 on:
   workflow_dispatch:
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - name: Download torch whl
+      - name: Download torch
         run: |
           wget -q "https://download.pytorch.org/whl/cu126/torch-2.6.0%2Bcu126-cp311-cp311-win_amd64.whl" -O torch.whl
           ls -lh torch.whl
           
-      - name: Create Release and Upload
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: torch-cu126
-          name: "PyTorch 2.6.0 CUDA 12.6 for Windows"
-          body: "torch-2.6.0+cu126-cp311-cp311-win_amd64.whl"
-          files: torch.whl
+      - name: Create Release and Upload via gh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create torch-cu126 torch.whl             --title "PyTorch 2.6.0 CUDA 12.6 Windows"             --notes "torch-2.6.0+cu126-cp311-cp311-win_amd64.whl"             --repo ${{ github.repository }}
