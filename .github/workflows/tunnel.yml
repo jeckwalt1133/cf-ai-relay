@@ -1,15 +1,13 @@
-name: GitTunnel v2
+name: GitTunnel v3
 on:
   workflow_dispatch:
     inputs:
       url:
         description: '下载URL'
         required: true
-        type: string
       filename:
-        description: '保存文件名'
+        description: '文件名'
         required: true
-        type: string
 
 permissions:
   contents: write
@@ -19,50 +17,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Download and Push to Repo
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download
         run: |
-          # 下载
           mkdir -p tunnel_data
           cd tunnel_data
-          FILENAME="${{ inputs.filename }}"
-          echo "下载: ${{ inputs.url }}"
-          curl -sL "${{ inputs.url }}" -o "$FILENAME" 2>&1 || wget -q "${{ inputs.url }}" -O "$FILENAME" 2>&1
-          SIZE=$(stat -c%s "$FILENAME" 2>/dev/null || ls -l "$FILENAME" | awk '{print $5}')
-          echo "下载完成: $FILENAME ($SIZE bytes)"
+          curl -sL "${{ inputs.url }}" -o "${{ inputs.filename }}" -w "HTTP %{http_code}\n" || wget -q "${{ inputs.url }}" -O "${{ inputs.filename }}"
+          ls -la
           cd ..
 
-          # 用 GitHub API 直接上传文件到 repo
-          python3 << 'PYEOF'
-          import os, json, base64, urllib.request
-
-          token = os.environ['GH_TOKEN']
-          repo = os.environ['REPO']
-          api_base = f'https://api.github.com/repos/{repo}/contents/tunnel_data'
-
-          fname = os.environ.get('FILENAME', 'download.bin')
-          fpath = f'tunnel_data/{fname}'
-          with open(fpath, 'rb') as f:
-              content = base64.b64encode(f.read()).decode()
-
-          body = json.dumps({
-              'message': f'Add {fname}',
-              'content': content,
-              'branch': 'master'
-          }).encode()
-
-          url = f'{api_base}/{fname}'
-          req = urllib.request.Request(url, data=body, method='PUT')
-          req.add_header('Authorization', f'Bearer {token}')
-          req.add_header('Accept', 'application/vnd.github+json')
-          req.add_header('Content-Type', 'application/json')
-
-          try:
-              resp = urllib.request.urlopen(req, timeout=120)
-              print(f'✅ 上传成功: {fname}')
-          except urllib.error.HTTPError as e:
-              err = e.read().decode()[:300]
-              print(f'❌ 上传失败: {err}')
-          PYEOF
+      - name: Commit
+        run: |
+          git config user.name "Tunnel"
+          git config user.email "tunnel@skynet.dev"
+          git add tunnel_data/
+          git commit -m "tunnel: ${{ inputs.filename }}" 2>&1
+          git push origin HEAD:master 2>&1
