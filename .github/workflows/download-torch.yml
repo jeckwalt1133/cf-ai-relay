@@ -1,4 +1,4 @@
-name: Download PyTorch CUDA Wheels
+name: Download PyTorch CUDA Wheels (Split)
 on:
   workflow_dispatch:
 
@@ -8,17 +8,23 @@ jobs:
     steps:
       - name: Download torch CUDA cu126 wheels
         run: |
-          mkdir -p wheels
+          mkdir -p wheels chunks
           BASE="https://download.pytorch.org/whl/cu126"
           for pkg in             "torch-2.6.0%2Bcu126-cp311-cp311-win_amd64.whl"             "torchvision-0.21.0%2Bcu126-cp311-cp311-win_amd64.whl"             "torchaudio-2.6.0%2Bcu126-cp311-cp311-win_amd64.whl"; do
-            echo "Download $pkg..."
-            wget -q "$BASE/$pkg" -P wheels/ && echo "OK" || echo "FAIL"
+            wget -q "$BASE/$pkg" -P wheels/ && echo "OK $pkg" || echo "FAIL $pkg"
           done
           ls -lh wheels/
+          # 拆成30MB小块
+          cd wheels
+          for f in *.whl; do
+            split -b 30M -d "$f" "../chunks/${f}_part_"
+          done
+          cd ..
+          ls -lh chunks/
           
-      - name: Upload wheels
+      - name: Upload chunks
         uses: actions/upload-artifact@v4
         with:
-          name: pytorch-cuda-wheels
-          path: wheels/*.whl
+          name: pytorch-chunks
+          path: chunks/*
           retention-days: 3
