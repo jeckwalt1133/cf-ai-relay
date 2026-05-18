@@ -6,14 +6,13 @@ jobs:
   download:
     runs-on: ubuntu-latest
     steps:
-      - name: Download torch CUDA wheels
+      - name: Download torch CUDA cu126 wheels
         run: |
           mkdir -p wheels
-          BASE="https://download.pytorch.org/whl/cu131"
-          # Download torch, torchvision, torchaudio for Windows Python 3.11
-          for pkg in "torch-2.6.0+cu131-cp311-cp311-win_amd64.whl" "torchvision-0.21.0+cu131-cp311-cp311-win_amd64.whl" "torchaudio-2.6.0+cu131-cp311-cp311-win_amd64.whl"; do
-            echo "Downloading $pkg..."
-            wget -q "$BASE/$pkg" -P wheels/ || echo "Failed: $pkg"
+          BASE="https://download.pytorch.org/whl/cu126"
+          for pkg in             "torch-2.6.0%2Bcu126-cp311-cp311-win_amd64.whl"             "torchvision-0.21.0%2Bcu126-cp311-cp311-win_amd64.whl"             "torchaudio-2.6.0%2Bcu126-cp311-cp311-win_amd64.whl"; do
+            echo "Download $pkg..."
+            wget -q "$BASE/$pkg" -P wheels/ && echo "OK" || echo "FAIL"
           done
           ls -lh wheels/
           
