@@ -5,9 +5,11 @@ on:
       repo:
         description: 'HF仓库'
         required: true
+        default: 'openai/clip-vit-large-patch14'
       pattern:
         description: '文件匹配'
         required: true
+        default: '*'
       target_dir:
         description: '目标目录'
         required: false
@@ -21,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Download
+      - name: Download from HuggingFace
         run: |
           pip install huggingface_hub -q
           python3 -c "
@@ -29,11 +31,20 @@ jobs:
           import os, subprocess as sp
           repo = '${{ inputs.repo }}'
           patterns = '${{ inputs.pattern }}'.split()
-          os.makedirs('${{ inputs.target_dir }}', exist_ok=True)
-          snapshot_download(repo, allow_patterns=patterns, local_dir='${{ inputs.target_dir }}', local_dir_use_symlinks=False)
-          for f in os.listdir('${{ inputs.target_dir }}'):
-              sz = os.path.getsize(f'${{ inputs.target_dir }}/{f}')
+          out = '${{ inputs.target_dir }}'
+          os.makedirs(out, exist_ok=True)
+          snapshot_download(repo, allow_patterns=patterns, local_dir=out, local_dir_use_symlinks=False)
+          for f in os.listdir(out):
+              sz = os.path.getsize(f'{out}/{f}')
               print(f'{f}: {sz//1024//1024}MB')
+              # Split files >40MB for API upload
+              if sz > 40_000_000:
+                  print(f'  Splitting {f}...')
+                  sp.run(['split', '-b', '40M', '-d', f'{out}/{f}', f'{out}/{f}.part_'], check=True)
+                  os.remove(f'{out}/{f}')
+          print('Done. Files:')
+          for f in sorted(os.listdir(out)):
+              print(f'  {f}')
           "
 
       - name: Upload via gh CLI
@@ -44,11 +55,15 @@ jobs:
           for f in *; do
             if [ -f "$f" ]; then
               sz=$(stat -c%s "$f" 2>/dev/null || ls -l "$f" | awk '{print $5}')
+              if [ $sz -gt 90000000 ]; then
+                echo "SKIP $f ($sz bytes) - too large, should have been split"
+                continue
+              fi
               echo "Uploading $f ($sz bytes)..."
               gh api repos/${{ github.repository }}/contents/${{ inputs.target_dir }}/$f \
                 -X PUT \
                 -f message="tunnel: $f" \
                 -f content="$(base64 -w0 "$f")" \
-                -f branch=master 2>&1 | head -3
+                -f branch=master 2>&1 | head -3 || echo "FAILED: $f"
             fi
           done
