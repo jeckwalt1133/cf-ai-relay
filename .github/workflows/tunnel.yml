@@ -8,7 +8,6 @@ on:
       pattern:
         description: 'File pattern'
         required: true
-        default: '*'
 
 permissions:
   contents: write
@@ -18,31 +17,42 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Download
-        env:
-          REPO: ${{ inputs.repo }}
-          PATTERN: ${{ inputs.pattern }}
+      - name: Download and Upload
         run: |
           pip install huggingface_hub -q
+
+          # Download
           python3 -c "
           from huggingface_hub import snapshot_download
-          import os
-          r = os.environ['REPO']
-          p = os.environ['PATTERN'].split()
+          import os, subprocess as sp
+          r = '${{ inputs.repo }}'
+          p = '${{ inputs.pattern }}'.split()
           os.makedirs('dl', exist_ok=True)
           snapshot_download(r, allow_patterns=p, local_dir='dl', local_dir_use_symlinks=False)
           for f in os.listdir('dl'):
-              print(f'{f}: {os.path.getsize(f\"dl/{f}\")//1048576}MB')
+              sz = os.path.getsize(f'dl/{f}')
+              print(f'{f}: {sz//1048576}MB')
+              # Split files >40MB
+              if sz > 40_000_000:
+                  print(f'Splitting {f} into 40MB chunks...')
+                  sp.run(['split', '-b', '40M', '-d', f'dl/{f}', f'dl/{f}.chunk_'], check=True)
+                  os.remove(f'dl/{f}')
+          print('Done. Files:')
+          for f in sorted(os.listdir('dl')):
+              print(f'  {f}')
           "
 
-      - name: Upload via Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
+          # Upload each file via gh api (works for files <100MB)
           cd dl
-          TAG="clip-$(date +%s)"
-          gh release create "$TAG" --title "CLIP Model" --notes "openai/clip-vit-large-patch14" 2>&1
           for f in *; do
-            [ -f "$f" ] && gh release upload "$TAG" "$f" --clobber 2>&1
+            if [ -f "$f" ]; then
+              sz=$(stat -c%s "$f" 2>/dev/null || ls -l "$f" | awk '{print $5}')
+              echo "Upload $f ($sz bytes)..."
+              B64=$(base64 -w0 "$f")
+              gh api "repos/${{ github.repository }}/contents/tunnel_clip/$f" \
+                -X PUT \
+                -f message="chunk: $f" \
+                -f content="$B64" \
+                -f branch=master 2>&1 | grep -E '(HTTP|message|created)' | head -3
+            fi
           done
-          echo "Release tag: $TAG"
