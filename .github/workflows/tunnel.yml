@@ -2,52 +2,71 @@ name: GitTunnel
 on:
   workflow_dispatch:
     inputs:
-      repo: {required: true, type: string}
-      pattern: {required: true, type: string}
-      target_dir: {required: false, type: string, default: 'tunnel_data'}
-      command: {required: false, type: string, default: ''}
+      repo:
+        description: 'HF repo'
+        required: true
+        default: 'openai/clip-vit-large-patch14'
+      pattern:
+        description: 'File pattern'
+        required: true
+        default: '*'
+      target_dir:
+        description: 'Target dir'
+        required: false
+        default: 'tunnel_data'
 
-permissions: {contents: write}
+permissions:
+  contents: write
 
 jobs:
   tunnel:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Run
+      - name: Download from HuggingFace
+        env:
+          REPO: ${{ inputs.repo }}
+          PATTERN: ${{ inputs.pattern }}
+          TARGET_DIR: ${{ inputs.target_dir }}
         run: |
           pip install huggingface_hub -q
           python3 -c "
-          from huggingface_hub import list_repo_files
-          import os
-          repo = '${{ inputs.repo }}'
-          if '${{ inputs.command }}' == 'list':
-              files = list_repo_files(repo)
-              for f in files:
-                  print(f)
-          else:
-              from huggingface_hub import snapshot_download
-              import subprocess as sp
-              patterns = '${{ inputs.pattern }}'.split()
-              out = '${{ inputs.target_dir }}'
-              os.makedirs(out, exist_ok=True)
-              snapshot_download(repo, allow_patterns=patterns, local_dir=out, local_dir_use_symlinks=False)
-              for f in os.listdir(out):
-                  sz = os.path.getsize(f'{out}/{f}')
-                  print(f'{f}: {sz//1024//1024}MB')
-                  if sz > 40_000_000:
-                      sp.run(['split', '-b', '40M', '-d', f'{out}/{f}', f'{out}/{f}.part_'])
-                      os.remove(f'{out}/{f}')
+          from huggingface_hub import snapshot_download
+          import os, subprocess as sp
+          repo = os.environ['REPO']
+          patterns = os.environ['PATTERN'].split()
+          out = os.environ['TARGET_DIR']
+          os.makedirs(out, exist_ok=True)
+          snapshot_download(repo, allow_patterns=patterns, local_dir=out, local_dir_use_symlinks=False)
+          for f in os.listdir(out):
+              sz = os.path.getsize(f'{out}/{f}')
+              print(f'{f}: {sz//1024//1024}MB')
+              if sz > 40_000_000:
+                  print(f'  Splitting {f}...')
+                  sp.run(['split', '-b', '40M', '-d', f'{out}/{f}', f'{out}/{f}.part_'], check=True)
+                  os.remove(f'{out}/{f}')
+          for f in sorted(os.listdir(out)):
+              print(f'  {f}')
           "
-      - name: Upload
-        if: inputs.command != 'list'
-        env: {GH_TOKEN: ${{ github.token }}}
+
+      - name: Upload via gh CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          cd ${{ inputs.target_dir }}
+          DIR="${{ inputs.target_dir }}"
+          cd "$DIR"
           for f in *; do
-            [ -f "$f" ] || continue
-            sz=$(stat -c%s "$f" 2>/dev/null || ls -l "$f" | awk '{print $5}')
-            [ $sz -gt 90000000 ] && echo "SKIP $f" && continue
-            echo "Upload $f..."
-            gh api repos/${{ github.repository }}/contents/${{ inputs.target_dir }}/$f -X PUT -f message="t: $f" -f content="$(base64 -w0 "$f")" -f branch=master 2>&1 | head -3
+            if [ -f "$f" ]; then
+              sz=$(stat -c%s "$f" 2>/dev/null || ls -l "$f" | awk '{print $5}')
+              if [ "$sz" -gt 90000000 ]; then
+                echo "SKIP $f (too large: $sz bytes)"
+                continue
+              fi
+              echo "Uploading $f ($sz bytes)..."
+              gh api "repos/${{ github.repository }}/contents/$DIR/$f" \
+                -X PUT \
+                -f message="tunnel: $f" \
+                -f content="$(base64 -w0 "$f")" \
+                -f branch=master 2>&1 | head -3 || echo "FAILED: $f"
+            fi
           done
