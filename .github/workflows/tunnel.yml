@@ -8,6 +8,10 @@ on:
       pattern:
         description: '文件匹配'
         required: true
+      target_dir:
+        description: '目标目录'
+        required: false
+        default: 'tunnel_data'
 
 permissions:
   contents: write
@@ -17,7 +21,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
       - name: Download
         run: |
           pip install huggingface_hub -q
@@ -26,19 +29,26 @@ jobs:
           import os, subprocess as sp
           repo = '${{ inputs.repo }}'
           patterns = '${{ inputs.pattern }}'.split()
-          os.makedirs('tunnel_data', exist_ok=True)
-          snapshot_download(repo, allow_patterns=patterns, local_dir='tunnel_data', local_dir_use_symlinks=False)
-          for f in os.listdir('tunnel_data'):
-              sz = os.path.getsize(f'tunnel_data/{f}')
+          os.makedirs('${{ inputs.target_dir }}', exist_ok=True)
+          snapshot_download(repo, allow_patterns=patterns, local_dir='${{ inputs.target_dir }}', local_dir_use_symlinks=False)
+          for f in os.listdir('${{ inputs.target_dir }}'):
+              sz = os.path.getsize(f'${{ inputs.target_dir }}/{f}')
               print(f'{f}: {sz//1024//1024}MB')
-              if sz > 90_000_000:
-                  sp.run(['split', '-b', '80M', '-d', f'tunnel_data/{f}', f'tunnel_data/{f}.part_'])
-                  os.remove(f'tunnel_data/{f}')
           "
-      - name: Push
+
+      - name: Upload via gh CLI
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git config user.name T && git config user.email t@t.dev
-          git add tunnel_data/ && git commit -m t || true
-          git push origin HEAD:master 2>&1 || echo "git push failed"
+          cd ${{ inputs.target_dir }}
+          for f in *; do
+            if [ -f "$f" ]; then
+              sz=$(stat -c%s "$f" 2>/dev/null || ls -l "$f" | awk '{print $5}')
+              echo "Uploading $f ($sz bytes)..."
+              gh api repos/${{ github.repository }}/contents/${{ inputs.target_dir }}/$f \
+                -X PUT \
+                -f message="tunnel: $f" \
+                -f content="$(base64 -w0 "$f")" \
+                -f branch=master 2>&1 | head -3
+            fi
+          done
