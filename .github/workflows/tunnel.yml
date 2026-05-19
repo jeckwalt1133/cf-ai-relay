@@ -20,39 +20,54 @@ jobs:
       - name: Download and Upload
         run: |
           pip install huggingface_hub -q
-
-          # Download
-          python3 -c "
+          python3 << 'PYEOF'
           from huggingface_hub import snapshot_download
-          import os, subprocess as sp
+          import os, subprocess as sp, json, base64, urllib.request
+
           r = '${{ inputs.repo }}'
           p = '${{ inputs.pattern }}'.split()
+          token = '${{ github.token }}'
+          repo = '${{ github.repository }}'
+          api_base = f'https://api.github.com/repos/{repo}/contents/tunnel_clip'
+
+          # Download
           os.makedirs('dl', exist_ok=True)
           snapshot_download(r, allow_patterns=p, local_dir='dl', local_dir_use_symlinks=False)
+
+          # Split large files
           for f in os.listdir('dl'):
               sz = os.path.getsize(f'dl/{f}')
               print(f'{f}: {sz//1048576}MB')
-              # Split files >40MB
               if sz > 40_000_000:
-                  print(f'Splitting {f} into 40MB chunks...')
+                  print(f'  Splitting into 40MB chunks...')
                   sp.run(['split', '-b', '40M', '-d', f'dl/{f}', f'dl/{f}.chunk_'], check=True)
                   os.remove(f'dl/{f}')
-          print('Done. Files:')
-          for f in sorted(os.listdir('dl')):
-              print(f'  {f}')
-          "
 
-          # Upload each file via gh api (works for files <100MB)
-          cd dl
-          for f in *; do
-            if [ -f "$f" ]; then
-              sz=$(stat -c%s "$f" 2>/dev/null || ls -l "$f" | awk '{print $5}')
-              echo "Upload $f ($sz bytes)..."
-              B64=$(base64 -w0 "$f")
-              gh api "repos/${{ github.repository }}/contents/tunnel_clip/$f" \
-                -X PUT \
-                -f message="chunk: $f" \
-                -f content="$B64" \
-                -f branch=master 2>&1 | grep -E '(HTTP|message|created)' | head -3
-            fi
-          done
+          # Upload each chunk via API
+          files = sorted(os.listdir('dl'))
+          print(f'\nUploading {len(files)} files...')
+          for fname in files:
+              fpath = f'dl/{fname}'
+              with open(fpath, 'rb') as fp:
+                  content_b64 = base64.b64encode(fp.read()).decode()
+
+              body = json.dumps({
+                  'message': f'chunk: {fname}',
+                  'content': content_b64,
+                  'branch': 'master'
+              }).encode()
+
+              url = f'{api_base}/{fname}'
+              req = urllib.request.Request(url, data=body, method='PUT')
+              req.add_header('Authorization', f'Bearer {token}')
+              req.add_header('Accept', 'application/vnd.github+json')
+              req.add_header('Content-Type', 'application/json')
+
+              try:
+                  resp = urllib.request.urlopen(req, timeout=120)
+                  print(f'  OK {fname}')
+              except urllib.error.HTTPError as e:
+                  err = e.read().decode()[:200]
+                  print(f'  FAIL {fname}: {err}')
+          print(f'\nDone. {len(files)} files processed.')
+          PYEOF
