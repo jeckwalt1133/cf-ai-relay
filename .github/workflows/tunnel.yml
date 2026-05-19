@@ -5,15 +5,10 @@ on:
       repo:
         description: 'HF repo'
         required: true
-        default: 'openai/clip-vit-large-patch14'
       pattern:
         description: 'File pattern'
         required: true
         default: '*'
-      target_dir:
-        description: 'Target dir'
-        required: false
-        default: 'tunnel_data'
 
 permissions:
   contents: write
@@ -23,44 +18,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Download from HuggingFace
+      - name: Download
         env:
           REPO: ${{ inputs.repo }}
           PATTERN: ${{ inputs.pattern }}
-          TARGET_DIR: ${{ inputs.target_dir }}
         run: |
           pip install huggingface_hub -q
           python3 -c "
           from huggingface_hub import snapshot_download
           import os
-          repo = os.environ['REPO']
-          patterns = os.environ['PATTERN'].split()
-          out = os.environ['TARGET_DIR']
-          os.makedirs(out, exist_ok=True)
-          snapshot_download(repo, allow_patterns=patterns, local_dir=out, local_dir_use_symlinks=False)
-          for f in os.listdir(out):
-              sz = os.path.getsize(f'{out}/{f}')
-              print(f'{f}: {sz//1024//1024}MB')
+          r = os.environ['REPO']
+          p = os.environ['PATTERN'].split()
+          os.makedirs('dl', exist_ok=True)
+          snapshot_download(r, allow_patterns=p, local_dir='dl', local_dir_use_symlinks=False)
+          for f in os.listdir('dl'):
+              print(f'{f}: {os.path.getsize(f\"dl/{f}\")//1048576}MB')
           "
 
-      - name: Create Release and Upload
+      - name: Upload via Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cd ${{ inputs.target_dir }}
-
-          # 创建 Release
-          TAG="tunnel-$(date +%s)"
-          gh release create "$TAG" --title "Tunnel: ${{ inputs.repo }}" --notes "Auto-downloaded" 2>&1
-
-          # 上传大文件作为 release asset
+          cd dl
+          TAG="clip-$(date +%s)"
+          gh release create "$TAG" --title "CLIP Model" --notes "openai/clip-vit-large-patch14" 2>&1
           for f in *; do
-            if [ -f "$f" ]; then
-              sz=$(stat -c%s "$f" 2>/dev/null || ls -l "$f" | awk '{print $5}')
-              echo "Uploading $f ($sz bytes) to Release $TAG..."
-              gh release upload "$TAG" "$f" --clobber 2>&1 || echo "FAILED: $f"
-            fi
+            [ -f "$f" ] && gh release upload "$TAG" "$f" --clobber 2>&1
           done
-
-          echo "Release: $TAG"
-          echo "https://github.com/${{ github.repository }}/releases/tag/$TAG"
+          echo "Release tag: $TAG"
