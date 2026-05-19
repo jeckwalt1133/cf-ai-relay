@@ -32,7 +32,7 @@ jobs:
           pip install huggingface_hub -q
           python3 -c "
           from huggingface_hub import snapshot_download
-          import os, subprocess as sp
+          import os
           repo = os.environ['REPO']
           patterns = os.environ['PATTERN'].split()
           out = os.environ['TARGET_DIR']
@@ -41,32 +41,26 @@ jobs:
           for f in os.listdir(out):
               sz = os.path.getsize(f'{out}/{f}')
               print(f'{f}: {sz//1024//1024}MB')
-              if sz > 40_000_000:
-                  print(f'  Splitting {f}...')
-                  sp.run(['split', '-b', '40M', '-d', f'{out}/{f}', f'{out}/{f}.part_'], check=True)
-                  os.remove(f'{out}/{f}')
-          for f in sorted(os.listdir(out)):
-              print(f'  {f}')
           "
 
-      - name: Upload via gh CLI
+      - name: Create Release and Upload
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          DIR="${{ inputs.target_dir }}"
-          cd "$DIR"
+          cd ${{ inputs.target_dir }}
+
+          # 创建 Release
+          TAG="tunnel-$(date +%s)"
+          gh release create "$TAG" --title "Tunnel: ${{ inputs.repo }}" --notes "Auto-downloaded" 2>&1
+
+          # 上传大文件作为 release asset
           for f in *; do
             if [ -f "$f" ]; then
               sz=$(stat -c%s "$f" 2>/dev/null || ls -l "$f" | awk '{print $5}')
-              if [ "$sz" -gt 90000000 ]; then
-                echo "SKIP $f (too large: $sz bytes)"
-                continue
-              fi
-              echo "Uploading $f ($sz bytes)..."
-              gh api "repos/${{ github.repository }}/contents/$DIR/$f" \
-                -X PUT \
-                -f message="tunnel: $f" \
-                -f content="$(base64 -w0 "$f")" \
-                -f branch=master 2>&1 | head -3 || echo "FAILED: $f"
+              echo "Uploading $f ($sz bytes) to Release $TAG..."
+              gh release upload "$TAG" "$f" --clobber 2>&1 || echo "FAILED: $f"
             fi
           done
+
+          echo "Release: $TAG"
+          echo "https://github.com/${{ github.repository }}/releases/tag/$TAG"
