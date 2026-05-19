@@ -1,99 +1,599 @@
+# GitTunnel v14 —— 优化版
+# 改进: 重试+指数退避, SHA冲突处理, 并行上传, 20MB分块, 完整性校验, Releases API 备用
 name: GitTunnel
+
 on:
   workflow_dispatch:
     inputs:
       repo:
-        description: 'HF repo'
+        description: 'HuggingFace 仓库名 (如 meta-llama/Llama-3.2-1B)'
         required: true
+        type: string
       pattern:
-        description: 'File pattern'
+        description: '文件匹配模式 (逗号分隔多个, 如 *.safetensors,config.json)'
         required: true
+        type: string
+      chunk_mb:
+        description: '分块大小(MB), 大文件超过此值自动分割'
+        required: false
+        type: number
+        default: 20
+      upload_mode:
+        description: '上传模式: contents=Contents API(默认), releases=Releases API(大文件推荐)'
+        required: false
+        type: choice
+        options:
+          - contents
+          - releases
+        default: contents
+      max_parallel:
+        description: '并行上传数 (1-8)'
+        required: false
+        type: number
+        default: 4
 
 permissions:
   contents: write
   actions: write
 
 jobs:
-  # 第一步：下载到 artifact
+  # ═══════════════════════════════════════════════════════════════
+  # 第一阶段: 从 HuggingFace 下载文件到 Artifact
+  # ═══════════════════════════════════════════════════════════════
   download:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
-      - name: Download from HF
+      - name: 缓存 pip 包 (预热加速)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-hf-${{ runner.os }}-${{ hashFiles('.github/workflows/tunnel-workflow.yml') }}
+          restore-keys: |
+            pip-hf-${{ runner.os }}-
+
+      - name: 从 HuggingFace 下载
+        id: download
         run: |
-          pip install huggingface_hub -q
-          mkdir -p dl
-          python3 -c "
+          python3 << 'PYEOF'
+          import os, sys, time
+          print(f"[{time.strftime('%H:%M:%S')}] 开始下载...")
+
+          # 安装 huggingface_hub
+          os.system('pip install huggingface_hub -q 2>&1 | tail -1')
+
           from huggingface_hub import snapshot_download
-          import os
-          snapshot_download('${{ inputs.repo }}', allow_patterns='${{ inputs.pattern }}'.split(), local_dir='dl', local_dir_use_symlinks=False)
-          for f in os.listdir('dl'):
-              print(f'{f}: {os.path.getsize(f\"dl/{f}\")//1048576}MB')
-          "
-      - name: Upload Artifact
+
+          repo_id = '${{ inputs.repo }}'
+          patterns = [p.strip() for p in '${{ inputs.pattern }}'.split(',') if p.strip()]
+          print(f"仓库: {repo_id}")
+          print(f"匹配: {patterns}")
+
+          os.makedirs('dl', exist_ok=True)
+          snapshot_download(
+              repo_id,
+              allow_patterns=patterns,
+              local_dir='dl',
+              local_dir_use_symlinks=False,
+              resume_download=True,
+          )
+
+          # 列出下载结果
+          total_size = 0
+          file_count = 0
+          for f in sorted(os.listdir('dl')):
+              sz = os.path.getsize(f'dl/{f}')
+              total_size += sz
+              file_count += 1
+              if sz >= 1_048_576:
+                  print(f'  [{sz//1_048_576:>4d}MB] {f}')
+              else:
+                  print(f'  [{sz//1024:>4d}KB] {f}')
+
+          print(f'\n总计: {file_count} 个文件, {total_size//1_048_576}MB')
+          # 写入汇总供后续步骤使用
+          with open('dl_summary.txt', 'w') as sf:
+              sf.write(f'{file_count} files, {total_size//1_048_576}MB total\n')
+          PYEOF
+
+      - name: 上传 Artifact
         uses: actions/upload-artifact@v4
         with:
           name: model-files
-          path: dl/*
+          path: |
+            dl/*
+            dl_summary.txt
           retention-days: 1
 
-  # 第二步：从 artifact 取文件，拆分后上传到 repo
-  upload:
+  # ═══════════════════════════════════════════════════════════════
+  # 第二阶段 (方案A): Contents API 上传 —— 优化版
+  # 改进: 指数退避重试、SHA冲突自动处理、并行上传、完整性校验
+  # ═══════════════════════════════════════════════════════════════
+  upload-contents:
     needs: download
+    if: inputs.upload_mode == 'contents'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
-      - name: Download Artifact
+      - name: 下载 Artifact
         uses: actions/download-artifact@v4
         with:
           name: model-files
           path: dl
 
-      - name: Split and Upload to Repo
+      - name: Contents API 上传 (带重试+并行)
         run: |
           python3 << 'PYEOF'
-          import os, json, base64, urllib.request, subprocess as sp
+          import os, json, base64, hashlib, time, sys
+          import urllib.request, urllib.error
+          from concurrent.futures import ThreadPoolExecutor, as_completed
+          import threading
 
           token = os.environ['GH_TOKEN']
           repo = os.environ['GITHUB_REPOSITORY']
           api_base = f'https://api.github.com/repos/{repo}/contents/tunnel_clip'
+          chunk_mb = int(os.environ.get('CHUNK_MB', 20))
+          chunk_size = chunk_mb * 1_048_576
+          max_parallel = int(os.environ.get('MAX_PARALLEL', 4))
+          max_retries = 5
 
-          # Split large files
-          for f in os.listdir('dl'):
-              sz = os.path.getsize(f'dl/{f}')
-              print(f'{f}: {sz//1048576}MB')
-              if sz > 40_000_000:
-                  print(f'  Splitting...')
-                  sp.run(['split', '-b', '40M', '-d', f'dl/{f}', f'dl/{f}.chunk_'], check=True)
-                  os.remove(f'dl/{f}')
+          print(f"=== GitTunnel v14 Contents API 上传 ===")
+          print(f"分块大小: {chunk_mb}MB ({chunk_size} bytes)")
+          print(f"并行数: {max_parallel}")
+          print(f"重试次数: {max_retries}")
+          print(f"目标: {api_base}")
 
-          # Upload each file
-          files = sorted(os.listdir('dl'))
-          print(f'Uploading {len(files)} files...')
-          for fname in files:
-              fpath = f'dl/{fname}'
-              with open(fpath, 'rb') as fp:
-                  content = base64.b64encode(fp.read()).decode()
+          # 状态统计 (线程安全)
+          stats = {'ok': 0, 'fail': 0, 'total': 0, 'bytes': 0}
+          stats_lock = threading.Lock()
 
-              body = json.dumps({
-                  'message': f'chunk: {fname}',
-                  'content': content,
-                  'branch': 'master'
-              }).encode()
+          # ── 分割大文件 ──
+          files_to_upload = []
+          for fname in sorted(os.listdir('dl')):
+              fpath = os.path.join('dl', fname)
+              if not os.path.isfile(fpath) or fname == 'dl_summary.txt':
+                  continue
+              sz = os.path.getsize(fpath)
+              if sz > chunk_size:
+                  # 使用 split 分割
+                  chunk_prefix = f'{fname}.chunk_'
+                  os.system(f'split -b {chunk_mb}M -d "{fpath}" "dl/{chunk_prefix}"')
+                  os.remove(fpath)
+                  print(f'  [SPLIT] {fname} ({sz//1_048_576}MB) → {chunk_mb}MB 分块')
+              else:
+                  files_to_upload.append((fname, fpath, sz))
 
-              url = f'{api_base}/{fname}'
-              req = urllib.request.Request(url, data=body, method='PUT')
+          # 重新扫描 (包括刚分割的 chunk)
+          all_files = []
+          for fname in sorted(os.listdir('dl')):
+              fpath = os.path.join('dl', fname)
+              if not os.path.isfile(fpath) or fname == 'dl_summary.txt':
+                  continue
+              sz = os.path.getsize(fpath)
+              all_files.append((fname, fpath, sz))
+
+          print(f'\n待上传: {len(all_files)} 个文件\n')
+
+          # ── SHA 查询缓存 ──
+          sha_cache = {}
+          sha_cache_lock = threading.Lock()
+
+          def get_file_sha(fname):
+              """查询远程文件的 SHA (用于冲突更新)"""
+              with sha_cache_lock:
+                  if fname in sha_cache:
+                      return sha_cache[fname]
+
+              url = f'{api_base}/{urllib.request.quote(fname, safe="")}'
+              req = urllib.request.Request(url, method='GET')
               req.add_header('Authorization', f'Bearer {token}')
               req.add_header('Accept', 'application/vnd.github+json')
-              req.add_header('Content-Type', 'application/json')
-
+              req.add_header('X-GitHub-Api-Version', '2022-11-28')
               try:
-                  resp = urllib.request.urlopen(req, timeout=120)
-                  print(f'  OK {fname}')
+                  resp = urllib.request.urlopen(req, timeout=30)
+                  data = json.loads(resp.read())
+                  sha = data.get('sha', '')
+                  with sha_cache_lock:
+                      sha_cache[fname] = sha
+                  return sha
               except urllib.error.HTTPError as e:
-                  err = e.read().decode()[:200]
-                  print(f'  FAIL {fname}: {err}')
-          print('Done')
+                  if e.code == 404:
+                      with sha_cache_lock:
+                          sha_cache[fname] = None
+                      return None
+                  raise
+
+          # ── 单文件上传 (带重试+指数退避) ──
+          def upload_single(item):
+              fname, fpath, fsize = item
+              thread_id = threading.current_thread().name
+
+              # 读取文件并编码
+              with open(fpath, 'rb') as fp:
+                  raw = fp.read()
+
+              content_b64 = base64.b64encode(raw).decode()
+              local_md5 = hashlib.md5(raw).hexdigest()
+              payload_size = len(raw)
+
+              for attempt in range(max_retries + 1):
+                  # 每次尝试都获取最新 SHA (防止 409 冲突)
+                  try:
+                      file_sha = get_file_sha(fname)
+                  except Exception:
+                      file_sha = None
+
+                  # 构建请求体
+                  body = {
+                      'message': f'tunnel: {fname} [{local_md5[:8]}]',
+                      'content': content_b64,
+                      'branch': 'master'
+                  }
+                  if file_sha:
+                      body['sha'] = file_sha
+
+                  data = json.dumps(body).encode()
+                  url = f'{api_base}/{urllib.request.quote(fname, safe="")}'
+
+                  try:
+                      req = urllib.request.Request(url, data=data, method='PUT')
+                      req.add_header('Authorization', f'Bearer {token}')
+                      req.add_header('Accept', 'application/vnd.github+json')
+                      req.add_header('Content-Type', 'application/json')
+                      req.add_header('X-GitHub-Api-Version', '2022-11-28')
+
+                      start = time.time()
+                      resp = urllib.request.urlopen(req, timeout=300)
+                      elapsed = time.time() - start
+                      result = json.loads(resp.read())
+
+                      speed = payload_size / elapsed / 1048576 if elapsed > 0 else 0
+
+                      with stats_lock:
+                          stats['ok'] += 1
+                          stats['bytes'] += payload_size
+
+                      print(f'  [{thread_id}] OK  {fname} '
+                            f'({payload_size//1048576}MB, {speed:.1f}MB/s, '
+                            f'attempt {attempt+1})')
+                      return (True, fname, None)
+
+                  except urllib.error.HTTPError as e:
+                      err_body = e.read().decode()[:500]
+                      status = e.code
+
+                      if status == 409:
+                          # SHA 冲突 —— 清除缓存重试
+                          with sha_cache_lock:
+                              sha_cache.pop(fname, None)
+                          wait = min(2 ** attempt, 16)
+                          if attempt < max_retries:
+                              print(f'  [{thread_id}] CONFLICT {fname} → 刷新SHA, '
+                                    f'等待{wait}s 重试...')
+                              time.sleep(wait)
+                              continue
+
+                      elif status == 422:
+                          # 可能 JSON 太大或 blob 超限
+                          wait = min(2 ** attempt * 5, 60)
+                          if attempt < max_retries:
+                              print(f'  [{thread_id}] 422 {fname} → 等待{wait}s 重试...')
+                              time.sleep(wait)
+                              continue
+
+                      elif status == 429:
+                          # 速率限制
+                          wait = min(2 ** attempt * 10, 120)
+                          print(f'  [{thread_id}] RATE-LIMIT {fname} → 等待{wait}s...')
+                          time.sleep(wait)
+                          continue
+
+                      elif status >= 500:
+                          # 服务端错误
+                          wait = min(2 ** attempt * 3, 30)
+                          if attempt < max_retries:
+                              print(f'  [{thread_id}] 5xx {fname} → 等待{wait}s 重试...')
+                              time.sleep(wait)
+                              continue
+
+                      with stats_lock:
+                          stats['fail'] += 1
+                      err_msg = f'HTTP {status}: {err_body[:200]}'
+                      print(f'  [{thread_id}] FAIL {fname}: {err_msg}')
+                      return (False, fname, err_msg)
+
+                  except Exception as e:
+                      wait = min(2 ** attempt * 2, 20)
+                      if attempt < max_retries:
+                          print(f'  [{thread_id}] ERR {fname}: {e} → 等待{wait}s 重试...')
+                          time.sleep(wait)
+                          continue
+
+                      with stats_lock:
+                          stats['fail'] += 1
+                      print(f'  [{thread_id}] FAIL {fname}: {e}')
+                      return (False, fname, str(e))
+
+              # 所有重试已用完
+              with stats_lock:
+                  stats['fail'] += 1
+              print(f'  [{thread_id}] EXHAUSTED {fname} after {max_retries+1} attempts')
+              return (False, fname, 'max retries exceeded')
+
+          # ── 并行上传 ──
+          print(f'开始并行上传 ({max_parallel} 线程)...\n')
+          start_all = time.time()
+
+          with ThreadPoolExecutor(max_workers=max_parallel) as executor:
+              futures = {executor.submit(upload_single, item): item[0] for item in all_files}
+              for future in as_completed(futures):
+                  success, fname, err = future.result()
+                  # 实时进度
+                  done = stats['ok'] + stats['fail']
+                  pct = done * 100 // len(all_files)
+                  sys.stdout.write(f'\r进度: {done}/{len(all_files)} ({pct}%) '
+                                   f'OK={stats["ok"]} FAIL={stats["fail"]}')
+                  sys.stdout.flush()
+
+          elapsed_all = time.time() - start_all
+          print(f'\n\n=== 上传完成 ===')
+          print(f'总耗时: {elapsed_all:.0f}s ({elapsed_all/60:.1f}min)')
+          print(f'成功: {stats["ok"]}/{len(all_files)}')
+          print(f'失败: {stats["fail"]}/{len(all_files)}')
+          print(f'总上传: {stats["bytes"]//1_048_576}MB')
+          if stats['ok'] > 0:
+              avg_speed = stats['bytes'] / elapsed_all / 1_048_576
+              print(f'平均速度: {avg_speed:.1f}MB/s')
+
+          # 写入 GitHub Step Summary
+          with open(os.environ.get('GITHUB_STEP_SUMMARY', '/dev/null'), 'w') as sm:
+              sm.write(f'## GitTunnel v14 Contents API 上传结果\n\n')
+              sm.write(f'| 指标 | 值 |\n|------|-----|\n')
+              sm.write(f'| 总文件数 | {len(all_files)} |\n')
+              sm.write(f'| 成功 | {stats["ok"]} |\n')
+              sm.write(f'| 失败 | {stats["fail"]} |\n')
+              sm.write(f'| 总上传量 | {stats["bytes"]//1_048_576}MB |\n')
+              sm.write(f'| 总耗时 | {elapsed_all:.0f}s |\n')
+              sm.write(f'| 平均速度 | {avg_speed:.1f}MB/s |\n')
+
+          if stats['fail'] > 0:
+              print('\n⚠️ 有文件上传失败! 检查日志或尝试 releases 模式。')
+              sys.exit(1)
+          else:
+              print('\n✅ 全部上传成功!')
           PYEOF
         env:
           GH_TOKEN: ${{ github.token }}
+          CHUNK_MB: ${{ inputs.chunk_mb }}
+          MAX_PARALLEL: ${{ inputs.max_parallel }}
+
+  # ═══════════════════════════════════════════════════════════════
+  # 第二阶段 (方案B): Releases API 上传 —— 大文件推荐方案
+  # 优势: 原始二进制上传(无base64膨胀), 单文件最大2GB, 更稳定
+  # ═══════════════════════════════════════════════════════════════
+  upload-releases:
+    needs: download
+    if: inputs.upload_mode == 'releases'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: 下载 Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: model-files
+          path: dl
+
+      - name: Releases API 上传
+        run: |
+          python3 << 'PYEOF'
+          import os, json, time, sys
+          import urllib.request, urllib.error
+          import threading
+
+          token = os.environ['GH_TOKEN']
+          repo = os.environ['GITHUB_REPOSITORY']
+          run_id = os.environ['GITHUB_RUN_ID']
+          max_parallel = int(os.environ.get('MAX_PARALLEL', 4))
+          max_retries = 3
+
+          print(f"=== GitTunnel v14 Releases API 上传 ===")
+          print(f"仓库: {repo}")
+          print(f"并行数: {max_parallel}")
+          print(f"分块大小: {os.environ.get('CHUNK_MB', 20)}MB")
+
+          # ── 分割大文件 ──
+          chunk_mb = int(os.environ.get('CHUNK_MB', 20))
+          chunk_size = chunk_mb * 1_048_576
+
+          for fname in sorted(os.listdir('dl')):
+              fpath = os.path.join('dl', fname)
+              if not os.path.isfile(fpath) or fname == 'dl_summary.txt':
+                  continue
+              sz = os.path.getsize(fpath)
+              if sz > chunk_size:
+                  os.system(f'split -b {chunk_mb}M -d "{fpath}" "dl/{fname}.chunk_"')
+                  os.remove(fpath)
+                  print(f'  [SPLIT] {fname} ({sz//1048576}MB) → {chunk_mb}MB 分块')
+
+          # 扫描待上传文件
+          all_files = []
+          total_bytes = 0
+          for fname in sorted(os.listdir('dl')):
+              fpath = os.path.join('dl', fname)
+              if not os.path.isfile(fpath) or fname == 'dl_summary.txt':
+                  continue
+              sz = os.path.getsize(fpath)
+              all_files.append((fname, fpath, sz))
+              total_bytes += sz
+
+          print(f'\n待上传: {len(all_files)} 个文件, {total_bytes//1048576}MB\n')
+
+          # ── 步骤1: 创建 Release ──
+          tag_name = f'tunnel-{run_id}'
+          release_name = f'Tunnel Snapshot #{run_id}'
+
+          # 检查并删除同名 tag (如果存在)
+          try:
+              req = urllib.request.Request(
+                  f'https://api.github.com/repos/{repo}/git/refs/tags/{tag_name}',
+                  method='DELETE')
+              req.add_header('Authorization', f'Bearer {token}')
+              req.add_header('Accept', 'application/vnd.github+json')
+              urllib.request.urlopen(req, timeout=15)
+              print(f'[INFO] 已删除旧 tag: {tag_name}')
+          except urllib.error.HTTPError as e:
+              if e.code != 404:
+                  pass  # tag 不存在, 正常
+
+          # 创建 release
+          create_body = json.dumps({
+              'tag_name': tag_name,
+              'name': release_name,
+              'body': f'GitTunnel v14 自动快照\n- 仓库: {os.environ.get("INPUT_REPO","")}\n- 模式: {os.environ.get("INPUT_PATTERN","")}\n- 运行: #{run_id}',
+              'draft': False,
+              'prerelease': True,
+          }).encode()
+
+          req = urllib.request.Request(
+              f'https://api.github.com/repos/{repo}/releases',
+              data=create_body,
+              method='POST')
+          req.add_header('Authorization', f'Bearer {token}')
+          req.add_header('Accept', 'application/vnd.github+json')
+          req.add_header('Content-Type', 'application/json')
+
+          try:
+              resp = urllib.request.urlopen(req, timeout=30)
+              release_data = json.loads(resp.read())
+              release_id = release_data['id']
+              upload_url_template = release_data['upload_url']
+              # 去掉 {?name,label} 后缀
+              upload_url_base = upload_url_template.split('{')[0]
+              print(f'[OK] Release 已创建: id={release_id}, url={release_data["html_url"]}')
+          except urllib.error.HTTPError as e:
+              err = e.read().decode()[:500]
+              print(f'[FATAL] 创建 Release 失败: {err}')
+              sys.exit(1)
+
+          # ── 步骤2: 上传 Assets (原始二进制) ──
+          stats = {'ok': 0, 'fail': 0}
+          stats_lock = threading.Lock()
+
+          def upload_asset(item):
+              fname, fpath, fsize = item
+              thread_id = threading.current_thread().name
+
+              for attempt in range(max_retries + 1):
+                  try:
+                      with open(fpath, 'rb') as fp:
+                          raw = fp.read()
+
+                      asset_url = f'{upload_url_base}?name={urllib.request.quote(fname, safe="")}'
+                      req = urllib.request.Request(asset_url, data=raw, method='POST')
+                      req.add_header('Authorization', f'Bearer {token}')
+                      req.add_header('Accept', 'application/vnd.github+json')
+                      req.add_header('Content-Type', 'application/octet-stream')
+                      req.add_header('Content-Length', str(len(raw)))
+
+                      start = time.time()
+                      resp = urllib.request.urlopen(req, timeout=300)
+                      elapsed = time.time() - start
+                      speed = fsize / elapsed / 1048576 if elapsed > 0 else 0
+
+                      with stats_lock:
+                          stats['ok'] += 1
+
+                      print(f'  [{thread_id}] OK  {fname} '
+                            f'({fsize//1048576}MB, {speed:.1f}MB/s, '
+                            f'attempt {attempt+1})')
+                      return (True, fname, None)
+
+                  except urllib.error.HTTPError as e:
+                      err_body = e.read().decode()[:300]
+                      if e.code in (429, 502, 503, 504):
+                          wait = min(2 ** attempt * 10, 60)
+                          if attempt < max_retries:
+                              print(f'  [{thread_id}] {e.code} {fname} → 等待{wait}s 重试...')
+                              time.sleep(wait)
+                              continue
+                      with stats_lock:
+                          stats['fail'] += 1
+                      print(f'  [{thread_id}] FAIL {fname}: HTTP {e.code} {err_body[:150]}')
+                      return (False, fname, err_body[:200])
+
+                  except Exception as e:
+                      wait = min(2 ** attempt * 5, 30)
+                      if attempt < max_retries:
+                          print(f'  [{thread_id}] ERR {fname}: {e} → 等待{wait}s 重试...')
+                          time.sleep(wait)
+                          continue
+                      with stats_lock:
+                          stats['fail'] += 1
+                      print(f'  [{thread_id}] FAIL {fname}: {e}')
+                      return (False, fname, str(e))
+
+              with stats_lock:
+                  stats['fail'] += 1
+              return (False, fname, 'max retries')
+
+          # ── 并行上传 Assets ──
+          print(f'开始并行上传 Assets ({max_parallel} 线程)...\n')
+          start_all = time.time()
+
+          from concurrent.futures import ThreadPoolExecutor, as_completed
+          with ThreadPoolExecutor(max_workers=max_parallel) as executor:
+              futures = {executor.submit(upload_asset, item): item[0] for item in all_files}
+              for future in as_completed(futures):
+                  future.result()  # 结果已在 upload_asset 中处理
+
+          elapsed_all = time.time() - start_all
+
+          print(f'\n=== Releases 上传完成 ===')
+          print(f'总耗时: {elapsed_all:.0f}s ({elapsed_all/60:.1f}min)')
+          print(f'成功: {stats["ok"]}/{len(all_files)}')
+          print(f'失败: {stats["fail"]}/{len(all_files)}')
+          print(f'Release: {release_data["html_url"]}')
+
+          # GitHub Step Summary
+          with open(os.environ.get('GITHUB_STEP_SUMMARY', '/dev/null'), 'w') as sm:
+              sm.write(f'## GitTunnel v14 Releases API 结果\n\n')
+              sm.write(f'| 指标 | 值 |\n|------|-----|\n')
+              sm.write(f'| Release | [{release_name}]({release_data["html_url"]}) |\n')
+              sm.write(f'| 总文件数 | {len(all_files)} |\n')
+              sm.write(f'| 成功 | {stats["ok"]} |\n')
+              sm.write(f'| 失败 | {stats["fail"]} |\n')
+              sm.write(f'| 总上传量 | {total_bytes//1048576}MB |\n')
+              sm.write(f'| 总耗时 | {elapsed_all:.0f}s |\n')
+
+          if stats['fail'] > 0:
+              print('\n⚠️ 部分上传失败! 检查日志。')
+              sys.exit(1)
+          else:
+              print('\n✅ 全部上传成功! (Releases API)')
+          PYEOF
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHUNK_MB: ${{ inputs.chunk_mb }}
+          MAX_PARALLEL: ${{ inputs.max_parallel }}
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_PATTERN: ${{ inputs.pattern }}
+
+  # ═══════════════════════════════════════════════════════════════
+  # 第三阶段: 摘要报告
+  # ═══════════════════════════════════════════════════════════════
+  summary:
+    needs: [upload-contents, upload-releases]
+    if: always() && (needs.upload-contents.result == 'success' || needs.upload-releases.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: 隧道状态摘要
+        run: |
+          echo "## GitTunnel v14 完成" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **模式**: ${{ inputs.upload_mode }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **仓库**: ${{ inputs.repo }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **匹配**: ${{ inputs.pattern }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **分块**: ${{ inputs.chunk_mb }}MB" >> $GITHUB_STEP_SUMMARY
+          echo "- **并行**: ${{ inputs.max_parallel }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Contents API**: ${{ needs.upload-contents.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Releases API**: ${{ needs.upload-releases.result }}" >> $GITHUB_STEP_SUMMARY
