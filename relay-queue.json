@@ -1,5 +1,6 @@
 {
-  "pending": [
+  "pending": [],
+  "completed": [
     {
       "id": "fetch_url-1779237760823",
       "type": "fetch_url",
@@ -9,10 +10,20 @@
       },
       "created_at": "2026-05-20T00:42:40.823519+00:00",
       "created_by": "relay-controller",
-      "retries": 0
+      "retries": 0,
+      "result": {
+        "task_id": "fetch_url-1779237760823",
+        "type": "fetch_url",
+        "started_at": "2026-05-20T00:42:58.658417+00:00",
+        "status": "completed",
+        "file": "results/daemon/fetch_20260520-004258_get_8cb584ffb6ec.dat",
+        "size": 272,
+        "http_status": 200,
+        "finished_at": "2026-05-20T00:42:59.003881+00:00"
+      },
+      "completed_at": "2026-05-20T00:42:59.003881+00:00"
     }
   ],
-  "completed": [],
   "failed": [],
-  "last_updated": "2026-05-20T00:42:40.823519+00:00"
+  "last_updated": "2026-05-20T00:42:58.658417+00:00"
 }
