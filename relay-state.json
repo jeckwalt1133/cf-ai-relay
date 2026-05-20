@@ -1,11 +1,13 @@
 {
-  "node": "github-actions-relay",
-  "run_id": "init",
-  "heartbeat_at": "2026-05-20T00:00:00Z",
+  "node": "github-actions-runner-GitHub Actions 1000000092",
+  "run_id": "26134058026",
+  "heartbeat_at": "2026-05-20T00:39:26.393552+00:00",
   "tasks_executed": 0,
   "tasks_pending": 0,
-  "uptime_seconds": 0,
-  "nodes_alive": ["local-sandbox"],
+  "uptime_seconds": 2366.393552,
+  "nodes_alive": [
+    "github-actions"
+  ],
   "started_at": "2026-05-20T00:00:00Z",
   "last_error": null,
   "results_this_run": []
