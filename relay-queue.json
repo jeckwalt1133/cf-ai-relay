@@ -1,5 +1,19 @@
 {
-  "pending": [],
+  "pending": [
+    {
+      "id": "rt-1779280058421",
+      "type": "realtime_api",
+      "args": {
+        "url": "https://httpbin.org/json",
+        "method": "GET",
+        "timeout": 30,
+        "_mode": "realtime"
+      },
+      "created_at": "2026-05-20T12:27:38.421874+00:00",
+      "created_by": "quick-request",
+      "retries": 0
+    }
+  ],
   "completed": [
     {
       "id": "fetch_url-1779237760823",
@@ -188,5 +202,5 @@
     }
   ],
   "failed": [],
-  "last_updated": "2026-05-20T12:27:02.431233+00:00"
+  "last_updated": "2026-05-20T12:27:41.185523+00:00"
 }
