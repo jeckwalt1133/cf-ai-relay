@@ -20,6 +20,17 @@
       "created_at": "2026-05-20T00:56:31.039972+00:00",
       "created_by": "relay-controller",
       "retries": 0
+    },
+    {
+      "id": "dns_resolve-1779238594936",
+      "type": "dns_resolve",
+      "args": {
+        "hostname": "api.openai.com",
+        "timeout": 30
+      },
+      "created_at": "2026-05-20T00:56:34.936176+00:00",
+      "created_by": "relay-controller",
+      "retries": 0
     }
   ],
   "completed": [
@@ -47,5 +58,5 @@
     }
   ],
   "failed": [],
-  "last_updated": "2026-05-20T00:56:31.039972+00:00"
+  "last_updated": "2026-05-20T00:56:34.936176+00:00"
 }
