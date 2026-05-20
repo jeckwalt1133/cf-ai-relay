@@ -1,20 +1,5 @@
 {
-  "pending": [
-    {
-      "id": "openai-1779278000583",
-      "type": "proxy_api",
-      "args": {
-        "url": "https://api.openai.com/v1/chat/completions",
-        "method": "POST",
-        "headers_b64": "eyJDb250ZW50LVR5cGUiOiAiYXBwbGljYXRpb24vanNvbiIsICJBdXRob3JpemF0aW9uIjogIkJlYXJlciBzay1wcm9qLWFpbkRxWUZTUjhabVJRejBUWEszcjlwcmZRRVRVVFQ0NC1tTVN6b091TFN3ZTBKQ1EtUUdCOTBqeHV0aWdDTkNGUUVtY0Q3UWZXVDNCbGJrRkptUlNOd09oZkNaTmpGZ29XVkpaeTl0VnVoUkozMllSUVN4MmVNdU9wSVA5Sy1LcUY1VWk1dExIZzZPYjlHd185SHgtVVRGZDBrQSJ9",
-        "body_b64": "eyJtb2RlbCI6ICJncHQtMy41LXR1cmJvIiwgIm1lc3NhZ2VzIjogW3sicm9sZSI6ICJ1c2VyIiwgImNvbnRlbnQiOiAiXHU3NTI4XHU0ZTAwXHU1M2U1XHU4YmRkXHU0ZWNiXHU3ZWNkXHU0ZjYwXHU4MWVhXHU1ZGYxIn1dLCAibWF4X3Rva2VucyI6IDEwMH0=",
-        "timeout": 60
-      },
-      "created_at": "2026-05-20T19:53:20.583356",
-      "created_by": "openai-proxy",
-      "retries": 0
-    }
-  ],
+  "pending": [],
   "completed": [
     {
       "id": "fetch_url-1779237760823",
@@ -175,8 +160,33 @@
         "finished_at": "2026-05-20T11:51:32.759554+00:00"
       },
       "completed_at": "2026-05-20T11:51:32.759554+00:00"
+    },
+    {
+      "id": "openai-1779278000583",
+      "type": "proxy_api",
+      "args": {
+        "url": "https://api.openai.com/v1/chat/completions",
+        "method": "POST",
+        "headers_b64": "eyJDb250ZW50LVR5cGUiOiAiYXBwbGljYXRpb24vanNvbiIsICJBdXRob3JpemF0aW9uIjogIkJlYXJlciBzay1wcm9qLWFpbkRxWUZTUjhabVJRejBUWEszcjlwcmZRRVRVVFQ0NC1tTVN6b091TFN3ZTBKQ1EtUUdCOTBqeHV0aWdDTkNGUUVtY0Q3UWZXVDNCbGJrRkptUlNOd09oZkNaTmpGZ29XVkpaeTl0VnVoUkozMllSUVN4MmVNdU9wSVA5Sy1LcUY1VWk1dExIZzZPYjlHd185SHgtVVRGZDBrQSJ9",
+        "body_b64": "eyJtb2RlbCI6ICJncHQtMy41LXR1cmJvIiwgIm1lc3NhZ2VzIjogW3sicm9sZSI6ICJ1c2VyIiwgImNvbnRlbnQiOiAiXHU3NTI4XHU0ZTAwXHU1M2U1XHU4YmRkXHU0ZWNiXHU3ZWNkXHU0ZjYwXHU4MWVhXHU1ZGYxIn1dLCAibWF4X3Rva2VucyI6IDEwMH0=",
+        "timeout": 60
+      },
+      "created_at": "2026-05-20T19:53:20.583356",
+      "created_by": "openai-proxy",
+      "retries": 0,
+      "result": {
+        "task_id": "openai-1779278000583",
+        "type": "proxy_api",
+        "started_at": "2026-05-20T11:53:35.057669+00:00",
+        "status": "completed",
+        "response_body": "{\n  \"id\": \"chatcmpl-DhZmSsA54a6Boje5Tr53X2fF3P55w\",\n  \"object\": \"chat.completion\",\n  \"created\": 1779278016,\n  \"model\": \"gpt-3.5-turbo-0125\",\n  \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\": \"assistant\",\n        \"content\": \"我是一个热爱学习和挑战自我的人。\",\n        \"refusal\": null,\n        \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 19,\n    \"completion_tokens\": 20,\n    \"total_tokens\": 39,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\": {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\": 0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\": \"default\",\n  \"system_fingerprint\": null\n}\n",
+        "http_status": 200,
+        "response_size": 840,
+        "finished_at": "2026-05-20T11:53:36.982294+00:00"
+      },
+      "completed_at": "2026-05-20T11:53:36.982294+00:00"
     }
   ],
   "failed": [],
-  "last_updated": "2026-05-20T19:53:22.057512"
+  "last_updated": "2026-05-20T11:53:35.057669+00:00"
 }
