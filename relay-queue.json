@@ -1,5 +1,20 @@
 {
-  "pending": [],
+  "pending": [
+    {
+      "id": "openai-1779278000583",
+      "type": "proxy_api",
+      "args": {
+        "url": "https://api.openai.com/v1/chat/completions",
+        "method": "POST",
+        "headers_b64": "eyJDb250ZW50LVR5cGUiOiAiYXBwbGljYXRpb24vanNvbiIsICJBdXRob3JpemF0aW9uIjogIkJlYXJlciBzay1wcm9qLWFpbkRxWUZTUjhabVJRejBUWEszcjlwcmZRRVRVVFQ0NC1tTVN6b091TFN3ZTBKQ1EtUUdCOTBqeHV0aWdDTkNGUUVtY0Q3UWZXVDNCbGJrRkptUlNOd09oZkNaTmpGZ29XVkpaeTl0VnVoUkozMllSUVN4MmVNdU9wSVA5Sy1LcUY1VWk1dExIZzZPYjlHd185SHgtVVRGZDBrQSJ9",
+        "body_b64": "eyJtb2RlbCI6ICJncHQtMy41LXR1cmJvIiwgIm1lc3NhZ2VzIjogW3sicm9sZSI6ICJ1c2VyIiwgImNvbnRlbnQiOiAiXHU3NTI4XHU0ZTAwXHU1M2U1XHU4YmRkXHU0ZWNiXHU3ZWNkXHU0ZjYwXHU4MWVhXHU1ZGYxIn1dLCAibWF4X3Rva2VucyI6IDEwMH0=",
+        "timeout": 60
+      },
+      "created_at": "2026-05-20T19:53:20.583356",
+      "created_by": "openai-proxy",
+      "retries": 0
+    }
+  ],
   "completed": [
     {
       "id": "fetch_url-1779237760823",
@@ -163,5 +178,5 @@
     }
   ],
   "failed": [],
-  "last_updated": "2026-05-20T11:51:31.768772+00:00"
+  "last_updated": "2026-05-20T19:53:22.057512"
 }
