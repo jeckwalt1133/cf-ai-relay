@@ -197,8 +197,21 @@ jobs:
                   elif task_type == 'proxy_api':
                       api_url = task_args.get('url', '')
                       method = task_args.get('method', 'GET')
-                      headers = task_args.get('headers', {})
-                      req_body = task_args.get('body', '')
+                      headers = {}
+                      # 支持headers_b64 (base64编码的JSON headers)
+                      if 'headers_b64' in task_args:
+                          try:
+                              headers = json.loads(base64.b64decode(task_args['headers_b64']))
+                          except: pass
+                      elif 'headers' in task_args:
+                          headers = task_args.get('headers', {})
+                      req_body = ''
+                      if 'body_b64' in task_args:
+                          try:
+                              req_body = base64.b64decode(task_args['body_b64']).decode()
+                          except: pass
+                      elif 'body' in task_args:
+                          req_body = task_args.get('body', '')
 
                       print(f'  🔄 {method} {api_url[:100]}')
 
@@ -211,8 +224,20 @@ jobs:
                       resp = urllib.request.urlopen(req, timeout=60)
                       content = resp.read()
 
+                      # 大响应存入单独文件
+                      resp_limit = 100000
                       result['status'] = 'completed'
-                      result['response_body'] = content.decode(errors='ignore')[:50000]
+                      if len(content) > resp_limit:
+                          # 大响应存文件
+                          import hashlib as _hl
+                          url_hash = _hl.md5(api_url.encode()).hexdigest()[:12]
+                          resp_file = f'{RESULTS_DIR}/proxy_{ts}_{url_hash}.json'
+                          with open(resp_file, 'wb') as f:
+                              f.write(content)
+                          result['response_file'] = resp_file
+                          result['response_body'] = content.decode(errors='ignore')[:5000] + f'\n...({len(content)} bytes, 完整响应: {resp_file})'
+                      else:
+                          result['response_body'] = content.decode(errors='ignore')
                       result['http_status'] = resp.status
                       result['response_size'] = len(content)
                       print(f'  ✅ {len(content)} bytes | HTTP {resp.status}')
