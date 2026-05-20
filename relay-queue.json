@@ -1,5 +1,19 @@
 {
-  "pending": [],
+  "pending": [
+    {
+      "id": "proxy_api-1779277878071",
+      "type": "proxy_api",
+      "args": {
+        "url": "https://api.openai.com/v1/models",
+        "method": "GET",
+        "timeout": 60,
+        "headers_b64": "eyJBdXRob3JpemF0aW9uIjogIkJlYXJlciBzay1wcm9qLWFpbkRxWUZTUjhabVJRejBUWEszcjlwcmZRRVRVVFQ0NC1tTVN6b091TFN3ZTBKQ1EtUUdCOTBqeHV0aWdDTkNGUUVtY0Q3UWZXVDNCbGJrRkptUlNOd09oZkNaTmpGZ29XVkpaeTl0VnVoUkozMllSUVN4MmVNdU9wSVA5Sy1LcUY1VWk1dExIZzZPYjlHd185SHgtVVRGZDBrQSJ9"
+      },
+      "created_at": "2026-05-20T11:51:18.071596+00:00",
+      "created_by": "relay-controller",
+      "retries": 0
+    }
+  ],
   "completed": [
     {
       "id": "fetch_url-1779237760823",
@@ -139,5 +153,5 @@
     }
   ],
   "failed": [],
-  "last_updated": "2026-05-20T11:50:46.626580+00:00"
+  "last_updated": "2026-05-20T11:51:18.071596+00:00"
 }
