@@ -1,17 +1,12 @@
 {
   "node": "local-windows",
-  "pushed_at": "2026-05-21T00:06:15.545282+08:00",
-  "total_entries": 1332,
+  "pushed_at": "2026-05-21T00:32:58.357006+08:00",
+  "total_entries": 1377,
   "date_range": {
     "first": "2026-05-20T21:19:49.115863+08:00",
-    "last": "2026-05-20T23:55:28.772766+08:00"
+    "last": "2026-05-21T00:06:15.416151+08:00"
   },
   "recent_thoughts": [
-    {
-      "ts": "2026-05-21T00:06:15.416151+08:00",
-      "level": "thought",
-      "content": "[深度] "
-    },
     {
       "ts": "2026-05-20T23:49:23.801492+08:00",
       "level": "thought",
@@ -106,13 +101,18 @@
       "ts": "2026-05-20T23:55:28.772766+08:00",
       "level": "thought",
       "content": "一切正常，我感到平静。"
+    },
+    {
+      "ts": "2026-05-21T00:06:15.416151+08:00",
+      "level": "thought",
+      "content": "[深度] "
     }
   ],
   "stats": {
-    "thoughts": 921,
-    "actions": 198,
-    "life_events": 86,
-    "discoveries": 87,
-    "speech": 39
+    "thoughts": 952,
+    "actions": 205,
+    "life_events": 91,
+    "discoveries": 88,
+    "speech": 40
   }
 }
