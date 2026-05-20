@@ -1,0 +1,12 @@
+{
+  "node": "github-actions-relay",
+  "run_id": "init",
+  "heartbeat_at": "2026-05-20T00:00:00Z",
+  "tasks_executed": 0,
+  "tasks_pending": 0,
+  "uptime_seconds": 0,
+  "nodes_alive": ["local-sandbox"],
+  "started_at": "2026-05-20T00:00:00Z",
+  "last_error": null,
+  "results_this_run": []
+}
