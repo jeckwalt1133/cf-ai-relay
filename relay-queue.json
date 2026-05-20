@@ -1,0 +1,12 @@
+{
+  "pending": [],
+  "completed": [],
+  "failed": [],
+  "last_updated": "2026-05-20T00:00:00Z",
+  "config": {
+    "max_tasks_per_run": 3,
+    "max_retries": 2,
+    "result_retention": 200,
+    "stale_timeout_seconds": 3600
+  }
+}
